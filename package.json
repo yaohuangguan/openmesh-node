@@ -1,0 +1,111 @@
+{
+  "name": "openmesh-node",
+  "version": "0.1.0",
+  "description": "A small Node.js HTTP framework for connected services, with peer routing and real Express/Fastify bridges.",
+  "repository": { "type": "git", "url": "git+https://github.com/yaohuangguan/openmesh-node.git" },
+  "homepage": "https://github.com/yaohuangguan/openmesh-node#readme",
+  "bugs": { "url": "https://github.com/yaohuangguan/openmesh-node/issues" },
+  "main": "index.cjs",
+  "types": "./index.d.cts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./index.d.mts",
+        "default": "./index.mjs"
+      },
+      "require": {
+        "types": "./index.d.cts",
+        "default": "./index.cjs"
+      }
+    },
+    "./plugins": {
+      "import": {
+        "types": "./plugins/index.d.mts",
+        "default": "./plugins/index.mjs"
+      },
+      "require": {
+        "types": "./plugins/index.d.ts",
+        "default": "./plugins/index.cjs"
+      }
+    },
+    "./package.json": "./package.json",
+    "./mesh": {
+      "import": {
+        "types": "./mesh/index.d.mts",
+        "default": "./mesh/index.mjs"
+      },
+      "require": {
+        "types": "./mesh/index.d.ts",
+        "default": "./mesh/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "index.cjs",
+    "index.mjs",
+    "index.d.ts",
+    "lib",
+    "plugins",
+    "LICENSE",
+    "README.md",
+    "README.en.md",
+    "docs",
+    "CONTRIBUTING.md",
+    "mesh",
+    "index.d.mts",
+    "index.d.cts"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node examples/basic.mjs",
+    "demo:cluster": "node examples/cluster.mjs --demo",
+    "example:cluster": "node examples/cluster.mjs",
+    "example:ecosystem": "node examples/ecosystem.mjs",
+    "test": "node --test tests/*.test.cjs",
+    "test:types": "tsc --noEmit --strict --types node --module NodeNext --moduleResolution NodeNext --target ES2022 tests/types.mts tests/types.cts",
+    "bench": "node benchmarks/run.cjs",
+    "bench:smoke": "node benchmarks/run.cjs --duration=1 --rounds=1 --connections=16 --scenarios=plaintext,json --frameworks=openmesh,fastify --output=results/smoke.json"
+  },
+  "peerDependencies": {
+    "fastify": "^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "fastify": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@fastify/cors": "11.3.0",
+    "@fastify/helmet": "13.1.1",
+    "@types/node": "^24.0.0",
+    "autocannon": "8.0.0",
+    "cors": "2.8.6",
+    "express": "5.2.1",
+    "fastify": "5.12.5",
+    "helmet": "8.3.0",
+    "koa": "3.2.1",
+    "typescript": "7.0.2"
+  },
+  "keywords": [
+    "http",
+    "framework",
+    "middleware",
+    "node",
+    "fastify",
+    "express",
+    "koa",
+    "plugins",
+    "microservices",
+    "distributed",
+    "peer-to-peer",
+    "service-discovery"
+  ],
+  "license": "MIT",
+  "overrides": {
+    "hyperid": {
+      "uuid": "11.1.1"
+    }
+  }
+}

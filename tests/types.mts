@@ -1,0 +1,11 @@
+import openmesh, { definePlugin, HttpError, type Context } from 'openmesh-node';
+import { jsonBody, requestContext, health } from 'openmesh-node/plugins';
+import { PeerPool } from 'openmesh-node/mesh';
+const app = openmesh();
+app.use(jsonBody()).use(requestContext()).register(health());
+app.get('/users/:id', (ctx: Context) => ({ id: ctx.params.id }));
+app.register(definePlugin(async scope => { scope.get('/status', () => 'ok'); }, { name: 'example' }));
+app.setErrorHandler((error, ctx) => { ctx.status = error instanceof HttpError ? error.statusCode : 500; return { error: 'handled' }; });
+const peers = new PeerPool({ peers: [{ id: 'local', url: 'http://127.0.0.1:3000' }] });
+await peers.json('/users/42', { key: '42', timeout: 1000 });
+peers.close();
