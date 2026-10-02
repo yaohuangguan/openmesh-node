@@ -65,7 +65,7 @@ The retry boundary is explicit:
 - once non-5xx headers are handed to the caller: the response is committed and is never replayed on another peer;
 - body-stream failure after that point is surfaced to the consumer and recorded against that peer.
 
-Admission and peer in-flight counters remain held until the stream ends, fails, is destroyed by the consumer, or the pool closes. The ordinary request timeout is a header deadline for streaming calls; long-lived bodies are controlled by the caller's `AbortSignal` or pool shutdown. Response bytes remain bounded by `maxResponseBytes`.
+Admission and peer in-flight counters remain held until the stream ends, fails, is destroyed by the consumer, or the pool closes. The ordinary request timeout is a header deadline for streaming calls. Long-lived bodies can additionally opt into `idleTimeout`, which enforces post-header socket inactivity and reports `STREAM_IDLE_TIMEOUT`; it remains disabled by default for compatibility with intentionally quiet streams. Response bytes remain bounded by `maxResponseBytes`.
 
 ## Per-service bulkheads
 

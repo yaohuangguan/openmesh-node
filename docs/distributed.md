@@ -69,7 +69,7 @@ const response = await pool.requestStream('/events', {
 response.body.pipe(destination);
 ```
 
-For streaming calls, `timeout` covers admission plus the time required to obtain response headers. Once non-5xx headers are returned to the caller, the response is committed and OpenMesh will not retry another peer if the body later fails. The pool continues to hold admission and peer in-flight accounting until the body ends, fails, is destroyed, or the pool closes.
+For streaming calls, `timeout` covers admission plus the time required to obtain response headers. `idleTimeout` is an optional post-header socket inactivity limit for SSE/LLM-style streams; it is disabled by default and fails with `STREAM_IDLE_TIMEOUT` when no network activity arrives within the configured window. Once non-5xx headers are returned to the caller, the response is committed and OpenMesh will not retry another peer if the body later fails. The pool continues to hold admission and peer in-flight accounting until the body ends, fails, is destroyed, or the pool closes.
 
 A consumer that no longer needs the body should call `response.destroy()` or abort the supplied signal. Consumer cancellation does not poison the peer circuit. Transport/body failures after headers do count against peer health.
 

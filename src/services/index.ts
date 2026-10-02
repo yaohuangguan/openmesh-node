@@ -6,7 +6,7 @@ import type { Context } from '../core/context.js';
 import { HttpError } from '../core/context.js';
 import { jsonBody } from '../plugins/index.js';
 import { PeerPool } from '../mesh/index.js';
-import type { Peer, PeerOptions, PeerPoolOptions, PeerPoolStats, PeerResponse, PeerStats, PeerStreamResponse } from '../mesh/index.js';
+import type { Peer, PeerOptions, PeerPoolOptions, PeerPoolStats, PeerResponse, PeerStats, PeerStreamOptions, PeerStreamResponse } from '../mesh/index.js';
 import {
   RegistryAdapter,
   ConfigAdapter,
@@ -1004,7 +1004,7 @@ export class ServicePool {
     return this.pool.request(path, options);
   }
 
-  requestStream(path: string, options?: PeerOptions): Promise<PeerStreamResponse> {
+  requestStream(path: string, options?: PeerStreamOptions): Promise<PeerStreamResponse> {
     return this.pool.requestStream(path, options);
   }
 

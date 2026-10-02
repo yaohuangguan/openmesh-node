@@ -467,3 +467,31 @@ test('consumer destroy releases streaming admission as cancellation', async () =
   assert.equal(pool.stats()[0].inflight, 0);
   pool.close();
 });
+
+
+test('stream idle timeout aborts stalled bodies after headers and releases admission', async t => {
+  const node = openmesh().get('/idle', () => Readable.from((async function* () {
+    yield 'first';
+    await new Promise(resolve => setTimeout(resolve, 80));
+    yield 'late';
+  })()));
+  const url = await serve(t, node);
+  const events = [];
+  const pool = new PeerPool({
+    peers: [{ id: 'idle', url }],
+    maxInflight: 1,
+    maxQueue: 0,
+    onEvent: event => events.push(event)
+  });
+  t.after(() => pool.close());
+
+  const response = await pool.requestStream('/idle', { timeout: 500, idleTimeout: 20 });
+  await assert.rejects(response.text(), error => error.code === 'STREAM_IDLE_TIMEOUT');
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(pool.poolStats().inflight, 0);
+  assert.equal(pool.stats()[0].inflight, 0);
+  assert.equal(pool.stats()[0].failures, 1);
+  assert.ok(events.some(event => event.type === 'peer.failure' && event.code === 'STREAM_IDLE_TIMEOUT'));
+  await assert.rejects(pool.requestStream('/idle', { idleTimeout: -1 }), /idleTimeout/);
+});

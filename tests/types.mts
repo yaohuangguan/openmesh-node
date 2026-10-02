@@ -19,7 +19,7 @@ const peers = new PeerPool({
 const peerPoolStats: PeerPoolStats = peers.poolStats();
 void peerPoolStats.overloadRejections;
 await peers.json('/users/42', { key: '42', timeout: 1000 });
-const streamed = await peers.requestStream('/users/42');
+const streamed = await peers.requestStream('/users/42', { idleTimeout: 30000 });
 const streamedText: string = await streamed.text();
 void streamedText;
 peers.close();

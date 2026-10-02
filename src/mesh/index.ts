@@ -52,6 +52,10 @@ export interface PeerOptions {
   idempotencyKey?: string;
 }
 
+export interface PeerStreamOptions extends PeerOptions {
+  idleTimeout?: number;
+}
+
 export interface TransportRequest {
   peer: Peer;
   url: URL;
@@ -60,6 +64,7 @@ export interface TransportRequest {
   body?: string | Buffer | Uint8Array;
   signal: AbortSignal;
   maxResponseBytes: number;
+  idleTimeout?: number;
 }
 
 export interface TransportResponse {
@@ -654,7 +659,7 @@ export class PeerPool {
     });
   }
 
-  private _sendStream({ url, method, headers, body, signal, maxResponseBytes }: TransportRequest): Promise<StreamTransportResponse> {
+  private _sendStream({ url, method, headers, body, signal, maxResponseBytes, idleTimeout }: TransportRequest): Promise<StreamTransportResponse> {
     return new Promise((resolve, reject) => {
       const secure = url.protocol === 'https:';
       const req = (secure ? https : http).request(url, {
@@ -683,7 +688,17 @@ export class PeerPool {
           res.destroy(reason);
           limiter.destroy(reason);
         };
-        const cleanup = (): void => signal.removeEventListener('abort', abort);
+        const cleanup = (): void => {
+          signal.removeEventListener('abort', abort);
+          if (idleTimeout) res.setTimeout(0);
+        };
+        if (idleTimeout) {
+          res.setTimeout(idleTimeout, () => {
+            const error = new PeerError('Peer stream idle timeout exceeded', 'STREAM_IDLE_TIMEOUT');
+            limiter.destroy(error);
+            res.destroy(error);
+          });
+        }
         signal.addEventListener('abort', abort, { once: true });
         limiter.once('close', () => {
           cleanup();
@@ -774,12 +789,14 @@ export class PeerPool {
     }
   }
 
-  requestStream(path: string, options: PeerOptions = {}): Promise<PeerStreamResponse> {
+  requestStream(path: string, options: PeerStreamOptions = {}): Promise<PeerStreamResponse> {
     return this._requestStream(path, options);
   }
 
-  private async _requestStream(path: string, options: PeerOptions = {}, onlyPeer: Peer | null = null): Promise<PeerStreamResponse> {
+  private async _requestStream(path: string, options: PeerStreamOptions = {}, onlyPeer: Peer | null = null): Promise<PeerStreamResponse> {
     const { method, headers, body, timeout, attempts, candidates } = this._prepare(path, options, onlyPeer);
+    const idleTimeout = options.idleTimeout ?? 0;
+    if (!Number.isSafeInteger(idleTimeout) || idleTimeout < 0) throw new TypeError('idleTimeout must be a nonnegative integer');
     const controller = new AbortController();
     this._active.add(controller);
     const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
@@ -807,7 +824,7 @@ export class PeerPool {
 
         try {
           const response = await raceAbort(
-            this._streamTransport({ peer, url: targetURL(peer, path), method, headers, body, signal, maxResponseBytes: this.maxResponseBytes }),
+            this._streamTransport({ peer, url: targetURL(peer, path), method, headers, body, signal, maxResponseBytes: this.maxResponseBytes, ...(idleTimeout ? { idleTimeout } : {}) }),
             signal
           );
 
