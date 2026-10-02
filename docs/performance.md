@@ -1,6 +1,31 @@
 # Performance reports
 
-## Current release — 0.2.0
+## Release benchmark — 0.4.0
+
+Measured on 2026-10-03 with Node v24.18.0 on macOS 24.6.0 (Intel Core i5-8279U, 8 logical CPUs). Each workload uses three 3-second measured rounds, a 1-second warmup, 32 connections, pipelining 1, one load-generator worker, and separate server processes. OpenMesh 0.4.0 is compared with Fastify 5.12.5 on the same machine.
+
+| Workload | OpenMesh req/s | Fastify req/s | Ratio | OpenMesh / Fastify p99 ms |
+| --- | ---: | ---: | ---: | ---: |
+| Plain text | 23,011 | 23,293 | 98.8% | 2 / 2 |
+| JSON object | 22,845 | 23,800 | 96.0% | 2 / 2 |
+| Route parameter | 23,821 | 24,333 | 97.9% | 2 / 2 |
+| JSON POST body | 20,221 | 20,952 | 96.5% | 3 / 3 |
+| One middleware | 22,712 | 22,515 | 100.9% | 2 / 2 |
+
+The geometric-mean OpenMesh/Fastify throughput ratio is **98.0%**. All 30 recorded runs had zero request errors, timeouts, and non-2xx responses. The normalized regression guard passes all current budgets. Raw per-round measurements and environment metadata are preserved in [`release-0.4.0.json`](../benchmarks/results/release-0.4.0.json).
+
+The recorded report was assembled from one complete three-round harness invocation per scenario because the remote execution layer limits long-lived terminal calls. The harness, workload definitions, warmups, process isolation, and summary calculations are unchanged; the JSON contains every recorded round. A normal local shell can reproduce the same parameters with one command:
+
+```sh
+node benchmarks/run.cjs --duration=3 --rounds=3 --connections=32 \
+  --frameworks=openmesh,fastify \
+  --scenarios=plaintext,json,params,body,middleware \
+  --output=results/release-0.4.0.json
+```
+
+These results establish near-parity on these small loopback workloads, not a universal performance advantage. The CI benchmark exists to catch regressions; production decisions should use representative payloads, TLS, route counts, concurrency, and deployment topology.
+
+## Historical release — 0.2.0
 
 Measured on 2026-10-02, on the machine described below, with three rounds per workload, 3-second measurements, 1-second warmups, 32 connections, pipelining 1, and one load-generator worker. Versions: OpenMesh 0.2.0 and Fastify 5.12.5. Native Node HTTP paths only; registration, discovery, tracing and bridges are disabled in both baselines.
 

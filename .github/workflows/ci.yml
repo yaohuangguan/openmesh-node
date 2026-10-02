@@ -10,14 +10,15 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm test
       - run: npm run test:types
+      - run: npm run test:package
       - run: npm run demo:cluster
       - run: npm run demo:services
       - run: npm pack --dry-run
@@ -35,8 +36,8 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -50,8 +51,8 @@ jobs:
   benchmark-regression:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -63,7 +64,7 @@ jobs:
         run: npm run bench:guard -- --report=benchmarks/results/ci.json --min-ratio=0.82 --min-geomean=0.88 --max-p99-ratio=3
       - name: Upload benchmark report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-node24-ubuntu
           path: benchmarks/results/ci.json

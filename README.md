@@ -10,7 +10,7 @@
 
 A TypeScript-first Node.js service runtime with onion middleware, real Express/Fastify bridges, peer routing, registration, discovery, and live configuration. The native Node core has **zero runtime dependencies**; the package is built from one strict TypeScript source tree into ESM, CommonJS, and generated declarations.
 
-Version **0.2.0 is experimental**. The performance goal is a substantial, reproducible lead over Fastify; that goal has **not yet been achieved**. Reports distinguish measurements from targets. This project is independent of Openmesh Network; its package name is `openmesh-node`.
+Version **0.4.0 is pre-1.0**: the public API is usable, but compatibility can still evolve between minor releases. Performance is tracked through normalized regression budgets against a same-run baseline rather than unsupported \"fastest framework\" claims. This project is independent of Openmesh Network; its package name is `openmesh-node`.
 
 ## What is included
 
@@ -19,15 +19,15 @@ Version **0.2.0 is experimental**. The performance goal is a substantial, reprod
 - Fastify plugins inside an actual, optionally installed Fastify 5 instance.
 - HTTP peer routing with keyed rendezvous affinity, load-aware P2C selection, bounded admission/backpressure, streaming responses, deadlines, retries, circuits, and bounded broadcasts.
 - Authenticated control-plane API with protocol/capability discovery, expiring registration leases, automatic heartbeats, and pre-drain deregistration.
-- Pluggable registry/config adapters with in-memory defaults and async adapter support.
-- Push-based SSE watches for service membership and configuration, with polling compatibility.
+- Pluggable registry/config adapters with in-memory defaults, async adapter support, and durable Redis adapters with atomic lease/CAS transitions.
+- Push-based SSE/PubSub watches for service membership and configuration, with polling/TTL-expiry compatibility.
 - Managed per-service pools that combine discovery watches with isolated concurrency/queue/circuit state; deregistration when services shut down.
 - Immutable live configuration, validation, and epoch/revision compare-and-swap.
-- Request IDs, `traceparent` propagation, health endpoints, AsyncLocalStorage request context, and exporter-neutral request/server/peer lifecycle events.
-- Optional adaptive concurrency with hard ceilings, plus normalized benchmark-regression budgets in CI.
+- Request IDs, `traceparent` propagation, health endpoints, AsyncLocalStorage request context, exporter-neutral lifecycle events, and an optional OpenTelemetry-compatible metrics bridge.
+- Scoped control-plane credentials with action and resource boundaries, optional adaptive concurrency with hard ceilings, plus normalized benchmark-regression budgets in CI.
 - TypeScript-first source with generated ESM/CommonJS builds and generated public declarations.
 
-The bundled control plane stores state in one process's memory. Use it for local clusters, integration testing, and early deployments; it does not provide durable or replicated consensus storage. Existing discovery callbacks can integrate an external registry. P2P means known HTTP nodes; NAT traversal and DHT are not implemented.
+The default control-plane stores are in-memory and are best suited to local clusters, integration testing, and early deployments. For durable single-Redis-backed deployments, use `openmesh-node/services/redis`; the adapter boundary also supports other external stores. OpenMesh does not claim to provide replicated consensus by itself. P2P means known HTTP nodes; NAT traversal and DHT are not implemented.
 
 ## Start a service
 

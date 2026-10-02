@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 (unreleased)
+## 0.4.0 - 2026-10-03
 
 - Add request/server lifecycle observability tied to actual response finish/close events, including streaming responses.
 - Add true streaming peer responses through `requestStream()`; admission and peer in-flight accounting remain held until the stream completes.
@@ -16,7 +16,7 @@
 - Add `openmesh-node/services/redis` durable registry/configuration adapters with Redis-side atomic lease/CAS transitions, Pub/Sub watches, TTL-expiry detection, and real Redis CI coverage.
 - Make benchmark p99 regression checks aware of 1 ms timer quantization so 0 ms vs 1 ms samples do not produce false 10x regressions.
 
-## 0.3.0 (unreleased)
+## 0.3.0 - not published (changes included in 0.4.0)
 
 - Add pluggable registry and configuration adapter contracts; control-plane stores may now be asynchronous.
 - Add authenticated SSE watches for service membership and configuration.
@@ -40,7 +40,7 @@
 - Simplify the native synchronous route dispatch path; preserve middleware return semantics.
 - Fix outbound body framing for DELETE/GET requests carrying bodies.
 - Add runnable microservice demos and an experimental Go/native Node transport comparison.
-- Prepare an npm package and a trusted-publishing workflow. Initial publication requires authenticated npm access.
+- Publish the npm package and add the initial trusted-publishing workflow.
 
 ## 0.1.0
 
