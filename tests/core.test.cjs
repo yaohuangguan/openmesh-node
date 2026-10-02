@@ -2,9 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Readable } = require('node:stream');
 const http = require('node:http');
-const openmesh = require('../index.cjs');
+const openmesh = require('openmesh-node');
 const { definePlugin } = openmesh;
-const { jsonBody, requestContext, currentRequestContext, health } = require('../plugins/index.cjs');
+const { jsonBody, requestContext, currentRequestContext, health } = require('openmesh-node/plugins');
 const { serve, request } = require('./helpers.cjs');
 
 test('sync/async handlers, JSON, bytes, streams and empty replies', async t => {

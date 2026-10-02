@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const openmesh = require('../index.cjs');
-const { ServiceRegistry, ConfigStore, controlPlane, ControlClient, serviceRegistration } = require('../services/index.cjs');
-const { PeerPool } = require('../mesh/index.cjs');
+const openmesh = require('openmesh-node');
+const { ServiceRegistry, ConfigStore, controlPlane, ControlClient, serviceRegistration } = require('openmesh-node/services');
+const { PeerPool } = require('openmesh-node/mesh');
 const { serve, request } = require('./helpers.cjs');
 const token = 'test-control-plane-token-123456';
 

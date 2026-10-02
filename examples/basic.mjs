@@ -1,5 +1,5 @@
-import openmesh from '../index.mjs';
-import { jsonBody, requestContext, health } from '../plugins/index.mjs';
+import openmesh from 'openmesh-node';
+import { jsonBody, requestContext, health } from 'openmesh-node/plugins';
 
 const app = openmesh();
 app.use(requestContext({ service: 'hello-service' }));

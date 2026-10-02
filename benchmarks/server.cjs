@@ -45,9 +45,9 @@ async function readJSON(req) { const chunks = []; let size = 0; for await (const
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); address = server.address();
     close = () => new Promise(resolve => { server.close(resolve); server.closeIdleConnections(); });
   } else if (framework === 'openmesh') {
-    const app = require('../index.cjs')();
+    const app = require('openmesh-node')();
     if (scenario === 'middleware') app.use(async (ctx, next) => { ctx.set('x-bench', '1'); await next(); });
-    if (scenario === 'body') { app.use(require('../plugins/index.cjs').jsonBody()); app.post('/', ctx => ctx.requestBody); }
+    if (scenario === 'body') { app.use(require('openmesh-node/plugins').jsonBody()); app.post('/', ctx => ctx.requestBody); }
     else app.get(route, ctx => scenario === 'plaintext' ? 'hello' : scenario === 'params' ? { id: ctx.params.id } : payload);
     address = await app.listen({ port: 0 }); close = () => app.close();
   } else if (framework === 'fastify') {

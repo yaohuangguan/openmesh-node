@@ -1,6 +1,6 @@
-import openmesh from '../index.mjs';
-import { PeerPool } from '../mesh/index.mjs';
-import { requestContext, health } from '../plugins/index.mjs';
+import openmesh from 'openmesh-node';
+import { PeerPool } from 'openmesh-node/mesh';
+import { requestContext, health } from 'openmesh-node/plugins';
 
 // Three independent HTTP listeners. No registry is required for this example.
 const nodes = [];

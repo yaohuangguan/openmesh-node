@@ -1,5 +1,0 @@
-import type { Middleware, Plugin } from '../index.js';
-export function jsonBody(options?: { limit?: number; prototypeAction?: 'error' | 'remove' | 'ignore' }): Middleware;
-export function requestContext(options?: { service?: string; requestIdHeader?: string }): Middleware;
-export function currentRequestContext(): Readonly<Record<string, unknown>> | null;
-export function health(options?: { ready?: () => boolean | Promise<boolean>; livePath?: string; readyPath?: string }): Plugin;

@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const openmesh = require('../index.cjs');
-const { requestContext } = require('../plugins/index.cjs');
-const { PeerPool, PeerError } = require('../mesh/index.cjs');
+const openmesh = require('openmesh-node');
+const { requestContext } = require('openmesh-node/plugins');
+const { PeerPool, PeerError } = require('openmesh-node/mesh');
 const { serve } = require('./helpers.cjs');
 const ok = data => ({ statusCode: 200, headers: {}, body: Buffer.from(JSON.stringify(data)) });
 const peers = [{ id: 'a', url: 'http://127.0.0.1:1' }, { id: 'b', url: 'http://127.0.0.1:2' }];
