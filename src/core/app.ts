@@ -810,29 +810,31 @@ export class OpenMesh {
         || notFound?.prefix
         || null;
 
-      const started = performance.now();
-      let observedFinish = false;
-      const finish = (aborted: boolean): void => {
-        if (observedFinish) return;
-        observedFinish = true;
-        res.off('finish', finished);
-        res.off('close', closed);
-        this._emit({
-          type: 'request.finish',
-          at: Date.now(),
-          method: req.method || 'GET',
-          path,
-          route: ctx!.routePattern,
-          statusCode: res.statusCode,
-          durationMs: performance.now() - started,
-          aborted
-        });
-      };
-      const finished = (): void => finish(false);
-      const closed = (): void => finish(!res.writableFinished);
-      res.once('finish', finished);
-      res.once('close', closed);
-      this._emit({ type: 'request.start', at: Date.now(), method: req.method || 'GET', path, route: ctx.routePattern });
+      if (this._root._observer) {
+        const started = performance.now();
+        let observedFinish = false;
+        const finish = (aborted: boolean): void => {
+          if (observedFinish) return;
+          observedFinish = true;
+          res.off('finish', finished);
+          res.off('close', closed);
+          this._emit({
+            type: 'request.finish',
+            at: Date.now(),
+            method: req.method || 'GET',
+            path,
+            route: ctx!.routePattern,
+            statusCode: res.statusCode,
+            durationMs: performance.now() - started,
+            aborted
+          });
+        };
+        const finished = (): void => finish(false);
+        const closed = (): void => finish(!res.writableFinished);
+        res.once('finish', finished);
+        res.once('close', closed);
+        this._emit({ type: 'request.start', at: Date.now(), method: req.method || 'GET', path, route: ctx.routePattern });
+      }
 
       const result = route
         ? (route as unknown as { run: Handler }).run(ctx)

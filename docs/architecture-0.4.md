@@ -22,7 +22,7 @@ OpenMesh 0.4 evolves the 0.3 service runtime into a production-tunable data plan
 - `server.closing`
 - `server.closed`
 
-Request completion is measured from the real Node `ServerResponse` `finish` / `close` lifecycle, not from the handler return. A streamed response therefore remains in-flight until bytes actually finish or the connection closes. Observer exceptions are isolated from application traffic.
+Request completion is measured from the real Node `ServerResponse` `finish` / `close` lifecycle, not from the handler return. A streamed response therefore remains in-flight until bytes actually finish or the connection closes. Observer exceptions are isolated from application traffic. When `onEvent` is not configured, OpenMesh does not install per-request observability listeners or take timing samples on the hot path; instrumentation is pay-for-what-you-enable.
 
 This boundary is intentionally exporter-neutral. Applications can enqueue these events into OpenTelemetry, Prometheus, logs, or another telemetry system without making those packages runtime dependencies.
 
