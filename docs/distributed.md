@@ -14,6 +14,9 @@ const pool = new PeerPool({
   selection: 'p2c'
 });
 const result = await pool.request('/users/42', { key: '42' });
+
+// Optional zero-dependency telemetry hook:
+// new PeerPool({ onEvent: event => metrics.enqueue(event) })
 console.log(result.peer.id, result.statusCode, result.json());
 pool.close();
 ```

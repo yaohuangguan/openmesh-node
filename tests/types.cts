@@ -5,7 +5,7 @@ import services = require('openmesh-node/services');
 const app = openmesh();
 app.use(plugins.jsonBody());
 app.get('/', (ctx: openmesh.Context) => ({ method: ctx.method }));
-const pool = new mesh.PeerPool({ selection: 'p2c', maxInflight: 64, maxQueue: 128 });
+const pool = new mesh.PeerPool({ selection: 'p2c', maxInflight: 64, maxQueue: 128, onEvent: event => { const kind: mesh.PeerPoolEvent['type'] = event.type; void kind; } });
 const poolLoad: mesh.PeerPoolStats = pool.poolStats();
 void poolLoad.queued;
 pool.close();

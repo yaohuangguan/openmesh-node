@@ -9,6 +9,16 @@ export interface Peer { id: string; url: string; }
 
 export type PeerSelectionStrategy = 'rendezvous' | 'p2c';
 
+export type PeerPoolEvent =
+  | { type: 'admission.queued'; at: number; inflight: number; queued: number }
+  | { type: 'admission.rejected'; at: number; inflight: number; queued: number }
+  | { type: 'peer.attempt'; at: number; peer: Peer; method: string; path: string; attempt: number }
+  | { type: 'peer.success'; at: number; peer: Peer; method: string; path: string; attempt: number; statusCode: number; latencyMs: number }
+  | { type: 'peer.failure'; at: number; peer: Peer; method: string; path: string; attempt: number; latencyMs: number; code?: string; statusCode?: number }
+  | { type: 'peer.cancelled'; at: number; peer: Peer; method: string; path: string; attempt: number };
+
+export type PeerPoolObserver = (event: PeerPoolEvent) => void;
+
 export interface PeerOptions {
   method?: string;
   key?: string;
@@ -164,6 +174,7 @@ export class PeerPool {
   private _http: http.Agent;
   private _https: https.Agent;
   private _transport: Transport;
+  private _observer: PeerPoolObserver | null;
   private _states = new Map<string, PeerState>();
   private _peers: Readonly<Peer>[] = [];
   private _cache = new Map<string, Readonly<Peer>[]>();
@@ -187,6 +198,7 @@ export class PeerPool {
     maxQueue?: number;
     selection?: PeerSelectionStrategy;
     transport?: Transport;
+    onEvent?: PeerPoolObserver;
   } = {}) {
     this.timeout = options.timeout ?? 2000;
     this.retries = options.retries ?? 1;
@@ -207,7 +219,9 @@ export class PeerPool {
     const maxSockets = options.maxSockets ?? 32;
     if (!Number.isSafeInteger(maxSockets) || maxSockets <= 0) throw new TypeError('maxSockets must be a positive integer');
     if (options.transport !== undefined && typeof options.transport !== 'function') throw new TypeError('Transport must be a function');
+    if (options.onEvent !== undefined && typeof options.onEvent !== 'function') throw new TypeError('onEvent must be a function');
 
+    this._observer = options.onEvent || null;
     this._http = new http.Agent({ keepAlive: true, maxSockets, maxTotalSockets: 256 });
     this._https = new https.Agent({ keepAlive: true, maxSockets, maxTotalSockets: 256 });
     this._transport = options.transport || (request => this._send(request));
@@ -318,6 +332,11 @@ export class PeerPool {
     };
   }
 
+  private _emit(event: PeerPoolEvent): void {
+    if (!this._observer) return;
+    try { this._observer(event); } catch {}
+  }
+
   private _releaseAdmission(): void {
     while (this._queue.length) {
       const waiter = this._queue.shift()!;
@@ -343,6 +362,7 @@ export class PeerPool {
 
     if (this._queue.length >= this.maxQueue) {
       this._overloadRejections++;
+      this._emit({ type: 'admission.rejected', at: Date.now(), inflight: this._admitted, queued: this._queue.length });
       return Promise.reject(new PeerError('Peer pool admission queue is full', 'POOL_OVERLOADED'));
     }
 
@@ -359,6 +379,7 @@ export class PeerPool {
       };
       signal.addEventListener('abort', waiter.abort, { once: true });
       this._queue.push(waiter);
+      this._emit({ type: 'admission.queued', at: Date.now(), inflight: this._admitted, queued: this._queue.length });
     });
   }
 
@@ -487,7 +508,9 @@ export class PeerPool {
         const state = this._claim(peer);
         if (!state) continue;
         count++;
+        const attempt = count;
         const started = performance.now();
+        this._emit({ type: 'peer.attempt', at: Date.now(), peer: { ...peer }, method, path, attempt });
         try {
           const response = await raceAbort(
             this._transport({ peer, url: targetURL(peer, path), method, headers, body, signal, maxResponseBytes: this.maxResponseBytes }),
@@ -496,14 +519,30 @@ export class PeerPool {
           if (response.statusCode >= 500) {
             throw new PeerError('Peer returned HTTP ' + response.statusCode, 'REMOTE_HTTP_ERROR', { peer, statusCode: response.statusCode });
           }
-          this._success(state, performance.now() - started);
+          const latencyMs = performance.now() - started;
+          this._success(state, latencyMs);
+          this._emit({ type: 'peer.success', at: Date.now(), peer: { ...peer }, method, path, attempt, statusCode: response.statusCode, latencyMs });
           return new PeerResponse(peer, response);
         } catch (error) {
           if (options.signal?.aborted || this._closed) {
             this._cancel(state);
+            this._emit({ type: 'peer.cancelled', at: Date.now(), peer: { ...peer }, method, path, attempt });
             throw signal.reason || error;
           }
-          this._failure(state, performance.now() - started);
+          const latencyMs = performance.now() - started;
+          this._failure(state, latencyMs);
+          const peerError = error instanceof PeerError ? error : null;
+          this._emit({
+            type: 'peer.failure',
+            at: Date.now(),
+            peer: { ...peer },
+            method,
+            path,
+            attempt,
+            latencyMs,
+            ...(peerError?.code ? { code: peerError.code } : {}),
+            ...(peerError?.statusCode ? { statusCode: peerError.statusCode } : {})
+          });
           lastError = error;
           if (signal.aborted) throw signal.reason;
           if (count >= attempts) break;

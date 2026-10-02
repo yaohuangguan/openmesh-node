@@ -231,3 +231,46 @@ test('peer stats expose inflight, success and latency telemetry without poisonin
   assert.equal(canceled.stats()[0].failures, 0);
   canceled.close(); pool.close();
 });
+
+
+test('peer pool observer receives safe lifecycle and pressure events', async () => {
+  const events = [];
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const pool = new PeerPool({
+    peers: [peers[0]],
+    maxInflight: 1,
+    maxQueue: 1,
+    retries: 0,
+    onEvent: event => {
+      events.push(event);
+      if (event.type === 'peer.success') throw new Error('observer failures must not break transport');
+    },
+    transport: async ({ url }) => {
+      if (url.pathname === '/hold') await gate;
+      if (url.pathname === '/fail') throw new PeerError('nope', 'TEST_FAILURE');
+      return ok({ path: url.pathname });
+    }
+  });
+
+  const held = pool.request('/hold');
+  await new Promise(resolve => setImmediate(resolve));
+  const queued = pool.request('/queued');
+  await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(pool.request('/overflow'), error => error.code === 'POOL_OVERLOADED');
+
+  release();
+  await held;
+  await queued;
+  await assert.rejects(pool.request('/fail'), /nope/);
+
+  assert.ok(events.some(event => event.type === 'admission.queued' && event.queued === 1));
+  assert.ok(events.some(event => event.type === 'admission.rejected'));
+  assert.ok(events.some(event => event.type === 'peer.attempt' && event.path === '/hold' && event.attempt === 1));
+  assert.ok(events.some(event => event.type === 'peer.success' && event.path === '/queued' && event.statusCode === 200));
+  assert.ok(events.some(event => event.type === 'peer.failure' && event.path === '/fail' && event.code === 'TEST_FAILURE'));
+  assert.ok(events.every(event => typeof event.at === 'number'));
+
+  pool.close();
+  assert.throws(() => new PeerPool({ onEvent: 'invalid' }), /onEvent/);
+});

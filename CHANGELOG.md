@@ -14,6 +14,7 @@
 - Remove service registrations in the pre-drain shutdown phase so discovery stops sending new work to draining instances.
 - Add default power-of-two-choice load-aware selection for unkeyed peer traffic while preserving rendezvous affinity for keyed requests.
 - Add bounded peer-pool admission with FIFO queueing, deadline-aware waits, overload rejection, and pool-level pressure telemetry.
+- Add zero-dependency structured `PeerPool` lifecycle events for pressure, attempts, success, failure, and cancellation so metrics/tracing exporters can attach without entering the core request path.
 
 ## 0.2.0
 

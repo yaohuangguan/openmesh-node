@@ -1,6 +1,6 @@
 import openmesh, { definePlugin, HttpError, type Context } from 'openmesh-node';
 import { jsonBody, requestContext, health } from 'openmesh-node/plugins';
-import { PeerPool, type PeerPoolStats, type PeerSelectionStrategy } from 'openmesh-node/mesh';
+import { PeerPool, type PeerPoolEvent, type PeerPoolStats, type PeerSelectionStrategy } from 'openmesh-node/mesh';
 import { ControlClient, controlPlane, serviceRegistration, ConfigStore, ServiceRegistry, type ControlPlaneInfo } from 'openmesh-node/services';
 const app = openmesh();
 app.use(jsonBody()).use(requestContext()).register(health());
@@ -12,7 +12,8 @@ const peers = new PeerPool({
   peers: [{ id: 'local', url: 'http://127.0.0.1:3000' }],
   selection,
   maxInflight: 64,
-  maxQueue: 128
+  maxQueue: 128,
+  onEvent: (event: PeerPoolEvent) => { void event.type; }
 });
 const peerPoolStats: PeerPoolStats = peers.poolStats();
 void peerPoolStats.overloadRejections;
