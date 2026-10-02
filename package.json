@@ -73,6 +73,16 @@
         "default": "./dist/cjs/services/testing/index.js"
       }
     },
+    "./services/redis": {
+      "import": {
+        "types": "./dist/types/services/redis/index.d.mts",
+        "default": "./dist/esm/services/redis/index.js"
+      },
+      "require": {
+        "types": "./dist/types/services/redis/index.d.ts",
+        "default": "./dist/cjs/services/redis/index.js"
+      }
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -124,6 +134,7 @@
     "fastify": "5.12.5",
     "helmet": "8.3.0",
     "koa": "3.2.1",
+    "redis": "^6.3.0",
     "typescript": "7.0.2"
   },
   "keywords": [

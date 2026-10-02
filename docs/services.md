@@ -167,6 +167,40 @@ New store epochs are recognized even when revision numbers match. Validation mus
 
 The initial fetch must succeed. Watchers do not persist a local cache through process restarts. `config.stop()` stops the stream/poll loop; closing the client stops configuration and service watchers.
 
+## Redis durable adapters
+
+`openmesh-node/services/redis` provides durable registry and configuration adapters without coupling the runtime to a particular Redis SDK. Pass any connected client that exposes the standard `sendCommand()` API; Node Redis works directly.
+
+```js
+import { createClient } from 'redis';
+import {
+  RedisRegistryAdapter,
+  RedisConfigAdapter
+} from 'openmesh-node/services/redis';
+
+const redis = createClient({ url: process.env.REDIS_URL });
+await redis.connect();
+
+app.register(controlPlane({
+  credentials,
+  registry: new RedisRegistryAdapter({
+    client: redis,
+    prefix: 'openmesh-prod',
+    watchInterval: 1000
+  }),
+  config: new RedisConfigAdapter({
+    client: redis,
+    prefix: 'openmesh-prod'
+  })
+}));
+
+app.onClose(() => redis.quit());
+```
+
+Registry lease creation, renewal, ownership-safe removal, revision updates, and configuration CAS writes use Redis-side Lua scripts so competing control-plane processes cannot interleave those transitions. Lease TTL is enforced by Redis itself. Registry subscriptions combine Pub/Sub for explicit membership changes with a lightweight interval check for TTL expiry, so Redis keyspace notifications are not required. Configuration watches use Pub/Sub and the configuration epoch is persisted in Redis.
+
+Adapters do not close the command client supplied by the application. Subscription connections are created with `client.duplicate()` and are owned and closed by the adapter. Use a distinct `prefix` for independent environments or test runs.
+
 ## Adapter conformance
 
 Adapter authors can validate Redis, etcd, SQL, or other implementations with the published `openmesh-node/services/testing` harness.

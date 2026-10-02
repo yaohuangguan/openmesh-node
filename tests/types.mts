@@ -4,6 +4,8 @@ import { PeerPool, type PeerPoolEvent, type PeerPoolStats, type PeerSelectionStr
 import { ControlClient, controlPlane, serviceRegistration, ConfigStore, ServiceRegistry, type ControlCredential, type ControlPlaneInfo } from 'openmesh-node/services';
 import { createOpenTelemetryObservers, type OpenTelemetryMeter } from 'openmesh-node/otel';
 import { runRegistryAdapterConformance, runConfigAdapterConformance } from 'openmesh-node/services/testing';
+import { RedisRegistryAdapter, RedisConfigAdapter } from 'openmesh-node/services/redis';
+import { createClient } from 'redis';
 const app = openmesh({ onEvent: (event: AppEvent) => { void event.type; } });
 app.use(jsonBody()).use(requestContext()).register(health());
 app.get('/users/:id', (ctx: Context) => ({ id: ctx.params.id }));
@@ -62,3 +64,9 @@ telemetryObservers.onPeerEvent({ type: 'admission.rejected', at: Date.now(), inf
 
 void runRegistryAdapterConformance({ create: () => new ServiceRegistry({ sweepInterval: 0 }) });
 void runConfigAdapterConformance({ create: () => new ConfigStore() });
+
+const typedRedisClient = createClient({ url: 'redis://127.0.0.1:6379' });
+const typedRedisRegistry = new RedisRegistryAdapter({ client: typedRedisClient, prefix: 'openmesh-types' });
+const typedRedisConfig = new RedisConfigAdapter({ client: typedRedisClient, prefix: 'openmesh-types' });
+void typedRedisRegistry;
+void typedRedisConfig;

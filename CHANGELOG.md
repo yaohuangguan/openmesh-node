@@ -13,6 +13,8 @@
 - Add scoped control-plane credentials with action permissions plus optional service/namespace resource restrictions while preserving the legacy full-access token mode.
 - Add `openmesh-node/otel`, a dependency-free OpenTelemetry-compatible metrics bridge for app and peer lifecycle events with bounded default attributes.
 - Add `openmesh-node/services/testing` adapter conformance harnesses for lease ownership, discovery secrecy, CAS, watches, and optional reopen durability checks.
+- Add `openmesh-node/services/redis` durable registry/configuration adapters with Redis-side atomic lease/CAS transitions, Pub/Sub watches, TTL-expiry detection, and real Redis CI coverage.
+- Make benchmark p99 regression checks aware of 1 ms timer quantization so 0 ms vs 1 ms samples do not produce false 10x regressions.
 
 ## 0.3.0 (unreleased)
 
