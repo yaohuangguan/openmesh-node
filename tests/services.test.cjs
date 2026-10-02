@@ -221,3 +221,46 @@ test('service watch falls back to polling when an adapter has no subscriptions',
     memory.close();
   }
 });
+
+
+test('service snapshots carry monotonic revisions for membership changes', () => {
+  let now = Date.now();
+  const registry = new ServiceRegistry({ now: () => now, sweepInterval: 0 });
+  try {
+    assert.equal(registry.snapshot('users').revision, 0);
+    const a = registry.register('users', 'a', { url: 'http://127.0.0.1:3000', ttl: 1000 });
+    assert.equal(registry.snapshot('users').revision, 1);
+    registry.register('users', 'b', { url: 'http://127.0.0.1:3001', ttl: 1000 });
+    assert.equal(registry.snapshot('users').revision, 2);
+    registry.deregister('users', 'a', a.leaseId);
+    assert.equal(registry.snapshot('users').revision, 3);
+    now += 1001;
+    const expired = registry.snapshot('users');
+    assert.equal(expired.revision, 4);
+    assert.deepEqual(expired.instances, []);
+  } finally { registry.close(); }
+});
+
+test('discovery restarts when membership revision changes between pages', async t => {
+  let calls = 0;
+  const instances = Array.from({ length: 101 }, (_, index) => ({
+    service: 'users', id: 'node-' + String(index).padStart(3, '0'), url: 'http://127.0.0.1:3000',
+    ttl: 30000, expiresAt: Date.now() + 30000, metadata: {}
+  }));
+  const registry = {
+    register() { throw new Error('unused'); }, renew() { throw new Error('unused'); }, deregister() { throw new Error('unused'); },
+    list() { return instances; },
+    snapshot() {
+      calls++;
+      const revision = calls === 2 ? 2 : 1;
+      return { service: 'users', revision, instances };
+    }
+  };
+  const url = await serve(t, openmesh().register(controlPlane({ token, registry })));
+  const client = new ControlClient({ url: url + '/_mesh', token, timeout: 1000 });
+  try {
+    const found = await client.discover('users');
+    assert.equal(found.length, 101);
+    assert.ok(calls >= 4, 'client should restart pagination after a revision mismatch');
+  } finally { await client.close(); }
+});

@@ -16,6 +16,18 @@ function closeAdapter(adapter) {
   if (typeof adapter.close !== 'function') return;
   return adapter.close();
 }
+async function serviceSnapshot(adapter, service) {
+  const value = typeof adapter.snapshot === 'function'
+    ? await adapter.snapshot(service)
+    : { service, instances: await adapter.list(service) };
+  if (!value || !Array.isArray(value.instances)) throw new TypeError('Registry snapshot must contain an instances array');
+  return value;
+}
+function watchEventId(eventName, value) {
+  if (eventName === 'services' && Number.isSafeInteger(value?.revision) && value.revision >= 0) return String(value.revision);
+  if (eventName === 'config' && typeof value?.epoch === 'string' && Number.isSafeInteger(value?.revision) && value.revision >= 0) return value.epoch + ':' + value.revision;
+  return null;
+}
 async function streamWatch(ctx, eventName, snapshot, subscribe, streams) {
   if (typeof subscribe !== 'function') throw new HttpError(501, 'This control-plane adapter does not support streaming watches');
   const res = ctx.res;
@@ -30,12 +42,17 @@ async function streamWatch(ctx, eventName, snapshot, subscribe, streams) {
   if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
   let active = true, ready = false, pending = false, queue = Promise.resolve();
+  let lastSentId = typeof ctx.get('last-event-id') === 'string' ? ctx.get('last-event-id') : '';
   const send = () => {
     queue = queue.then(async () => {
       if (!active || res.destroyed || res.writableEnded) return;
       const value = await snapshot();
+      const eventId = watchEventId(eventName, value);
+      if (eventId && eventId === lastSentId) return;
       res.write('event: ' + eventName + '\n');
+      if (eventId) res.write('id: ' + eventId + '\n');
       res.write('data: ' + JSON.stringify(value) + '\n\n');
+      if (eventId) lastSentId = eventId;
     }).catch(error => {
       if (active && !res.destroyed) res.destroy(error);
     });
@@ -96,17 +113,22 @@ function controlPlane({ token, registry, config, prefix = '/_mesh' } = {}) {
       scope.get('/services/:service', async ctx => {
         const cursor = ctx.query.cursor;
         if (cursor !== undefined) name(cursor);
-        const records = await activeRegistry.list(ctx.params.service);
-        const filtered = records.filter(instance => !cursor || instance.id > cursor);
+        const snapshot = await serviceSnapshot(activeRegistry, ctx.params.service);
+        const filtered = snapshot.instances.filter(instance => !cursor || instance.id > cursor);
         const instances = filtered.slice(0, 100);
-        return { instances, nextCursor: filtered.length > 100 ? instances.at(-1).id : null };
+        return {
+          service: ctx.params.service,
+          revision: Number.isSafeInteger(snapshot.revision) ? snapshot.revision : undefined,
+          instances,
+          nextCursor: filtered.length > 100 ? instances.at(-1).id : null
+        };
       });
       scope.get('/watch/services/:service', ctx => {
         name(ctx.params.service);
         return streamWatch(
           ctx,
           'services',
-          async () => ({ service: ctx.params.service, instances: await activeRegistry.list(ctx.params.service) }),
+          () => serviceSnapshot(activeRegistry, ctx.params.service),
           typeof activeRegistry.subscribe === 'function' ? listener => activeRegistry.subscribe(ctx.params.service, listener) : null,
           streams
         );
@@ -189,8 +211,11 @@ async function parseSSE(response, onData) {
     let boundary;
     while ((boundary = buffer.indexOf('\n\n')) >= 0) {
       const block = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
-      const data = block.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
-      if (data) await onData(JSON.parse(data));
+      const lines = block.split('\n');
+      const data = lines.filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
+      const idLine = lines.find(line => line.startsWith('id:'));
+      const eventId = idLine ? idLine.slice(3).trimStart() : null;
+      if (data) await onData(JSON.parse(data), eventId);
     }
   }
 }
@@ -199,6 +224,7 @@ class ConfigWatcher {
   constructor(client, snapshot, { interval = 1000, reconnectDelay = 250, transport = 'stream', onUpdate = () => {}, onError = () => {}, validate = () => {} } = {}) {
     if (!Number.isSafeInteger(interval) || interval < 50 || !Number.isSafeInteger(reconnectDelay) || reconnectDelay < 50 || !['stream', 'poll'].includes(transport) || typeof onUpdate !== 'function' || typeof onError !== 'function' || typeof validate !== 'function') throw new TypeError('Invalid configuration watcher');
     this.client = client; this.snapshot = freeze(snapshot); this.lastError = null; this._interval = interval; this._reconnectDelay = reconnectDelay; this._transport = transport; this._onUpdate = onUpdate; this._onError = onError; this._validate = validate; this._stopped = false; this._abort = new AbortController(); this._timer = null;
+    this._lastEventId = snapshot.epoch + ':' + snapshot.revision;
     this._check(snapshot.values);
     if (transport === 'stream') this._task = this._stream();
     else this._schedule();
@@ -227,7 +253,10 @@ class ConfigWatcher {
   async _stream() {
     while (!this._stopped) {
       try {
-        await this.client._watch('/watch/config/' + name(this.snapshot.namespace), this._abort.signal, value => this._apply(value));
+        await this.client._watch('/watch/config/' + name(this.snapshot.namespace), this._abort.signal, (value, eventId) => {
+          if (eventId) this._lastEventId = eventId;
+          this._apply(value);
+        }, this._lastEventId);
         if (!this._stopped) throw new Error('Control-plane config watch ended');
       } catch (error) {
         if (this._stopped || this._abort.signal.aborted) return;
@@ -248,7 +277,7 @@ function sameInstances(a, b) {
 class ServiceWatcher {
   constructor(client, service, instances, { interval = 1000, reconnectDelay = 250, transport = 'stream', onUpdate = () => {}, onError = () => {} } = {}) {
     if (!Number.isSafeInteger(interval) || interval < 50 || !Number.isSafeInteger(reconnectDelay) || reconnectDelay < 50 || !['stream', 'poll'].includes(transport) || typeof onUpdate !== 'function' || typeof onError !== 'function') throw new TypeError('Invalid service watcher');
-    this.client = client; this.service = name(service); this.instances = freeze(instances.map(instance => ({ ...instance }))); this.lastError = null; this._interval = interval; this._reconnectDelay = reconnectDelay; this._transport = transport; this._onUpdate = onUpdate; this._onError = onError; this._stopped = false; this._abort = new AbortController(); this._timer = null;
+    this.client = client; this.service = name(service); this.instances = freeze(instances.map(instance => ({ ...instance }))); this.lastError = null; this._interval = interval; this._reconnectDelay = reconnectDelay; this._transport = transport; this._onUpdate = onUpdate; this._onError = onError; this._stopped = false; this._abort = new AbortController(); this._timer = null; this._lastEventId = null;
     if (transport === 'stream') this._task = this._stream(); else this._schedule();
   }
   _apply(value) {
@@ -275,7 +304,10 @@ class ServiceWatcher {
   async _stream() {
     while (!this._stopped) {
       try {
-        await this.client._watch('/watch/services/' + this.service, this._abort.signal, value => this._apply(value));
+        await this.client._watch('/watch/services/' + this.service, this._abort.signal, (value, eventId) => {
+          if (eventId) this._lastEventId = eventId;
+          this._apply(value);
+        }, this._lastEventId);
         if (!this._stopped) throw new Error('Control-plane service watch ended');
       } catch (error) {
         if (this._stopped || this._abort.signal.aborted) return;
@@ -300,8 +332,10 @@ class ControlClient {
     if (response.statusCode >= 400) throw new HttpError(response.statusCode, response.json().error || 'Control-plane request failed');
     return response.statusCode === 204 ? undefined : response.json();
   }
-  async _watch(path, signal, onData) {
-    const response = await fetch(this._url + path, { headers: { authorization: 'Bearer ' + this._token, accept: 'text/event-stream' }, signal, redirect: 'error' });
+  async _watch(path, signal, onData, lastEventId) {
+    const headers = { authorization: 'Bearer ' + this._token, accept: 'text/event-stream' };
+    if (lastEventId) headers['last-event-id'] = lastEventId;
+    const response = await fetch(this._url + path, { headers, signal, redirect: 'error' });
     return parseSSE(response, onData);
   }
   async register(service, { id, url, ttl = 30000, metadata = {}, onError } = {}) {
@@ -314,17 +348,26 @@ class ControlClient {
     const registration = new Registration(this, record, { ...options, metadata: record.metadata, onError }, requestedAt); this._registrations.add(registration); return registration;
   }
   async discover(service, { signal } = {}) {
+    service = name(service);
     const deadline = AbortSignal.timeout(this._pool.timeout);
     const bounded = signal ? AbortSignal.any([signal, deadline]) : deadline;
-    const instances = new Map(); let cursor = null;
-    for (let page = 0; page < 100; page++) {
-      const result = await this._call('GET', '/services/' + name(service) + (cursor ? '?cursor=' + encodeURIComponent(cursor) : ''), undefined, bounded);
-      for (const instance of result.instances) instances.set(instance.id, instance);
-      if (!result.nextCursor) return [...instances.values()];
-      if (cursor && result.nextCursor <= cursor) throw new Error('Discovery cursor did not advance');
-      cursor = result.nextCursor;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const instances = new Map(); let cursor = null, revision;
+      let changed = false;
+      for (let page = 0; page < 100; page++) {
+        const result = await this._call('GET', '/services/' + service + (cursor ? '?cursor=' + encodeURIComponent(cursor) : ''), undefined, bounded);
+        if (Number.isSafeInteger(result.revision)) {
+          if (revision === undefined) revision = result.revision;
+          else if (revision !== result.revision) { changed = true; break; }
+        }
+        for (const instance of result.instances) instances.set(instance.id, instance);
+        if (!result.nextCursor) return [...instances.values()];
+        if (cursor && result.nextCursor <= cursor) throw new Error('Discovery cursor did not advance');
+        cursor = result.nextCursor;
+      }
+      if (!changed) throw new Error('Discovery exceeded 100 pages; narrow the service membership');
     }
-    throw new Error('Discovery exceeded 100 pages; narrow the service membership');
+    throw new Error('Service membership changed repeatedly during discovery');
   }
   getConfig(namespace, { signal } = {}) { return this._call('GET', '/config/' + name(namespace), undefined, signal); }
   setConfig(namespace, values, { expectedRevision, expectedEpoch, signal } = {}) { return this._call('PUT', '/config/' + name(namespace), { values, expectedRevision, expectedEpoch }, signal); }

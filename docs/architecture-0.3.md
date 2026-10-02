@@ -83,11 +83,22 @@ This avoids a Go -> JavaScript boundary for every application request. Native da
 The next 0.3 work should build on these boundaries rather than enlarge the core class:
 
 1. production adapters and adapter conformance tests;
-2. revisioned service membership snapshots and resumable watches;
-3. schema validation / response serialization contracts;
-4. structured lifecycle hooks and OpenTelemetry context;
-5. streaming peer responses and transport metrics;
+2. durable production adapters and adapter conformance suites;
+3. OpenTelemetry context and exporter integration;
+4. streaming peer responses and richer transport metrics;
+5. optional load-aware peer selection for unkeyed traffic;
 6. hardened server timeout/header/body defaults;
 7. an optional standalone Go control plane implementing the same protocol.
 
 Performance changes must be compared against the same commit/environment baseline. One-second smoke benchmarks are only harness checks and are not release evidence.
+
+
+## Revisioned membership and resumable watches
+
+Built-in service membership now has a monotonic per-service revision. Discovery pages include that revision; clients restart pagination when membership changes between pages instead of returning a mixed snapshot.
+
+SSE watch events carry `id` values. Config events use `<epoch>:<revision>` and service events use the service membership revision. Reconnecting clients send `Last-Event-ID`; the control plane suppresses a duplicate initial snapshot when the revision is unchanged, while still sending the complete current snapshot when state advanced. Watches therefore resume from state rather than relying on a lossy delta stream.
+
+## Peer transport telemetry
+
+`PeerPool.stats()` now reports successes, in-flight requests, last/EWMA latency and last success/failure timestamps in addition to attempts and circuit state. Caller cancellation releases in-flight accounting without incrementing peer failures. These metrics are deliberately transport-local and are suitable inputs for future load-aware selection and OpenTelemetry export.

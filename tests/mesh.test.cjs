@@ -78,3 +78,35 @@ test('stopping discovery ignores a pending provider result', async () => {
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(pool.peers, peers); pool.close();
 });
+
+
+test('peer stats expose inflight, success and latency telemetry without poisoning cancellation', async () => {
+  let release;
+  const pool = new PeerPool({
+    peers: [peers[0]],
+    transport: () => new Promise(resolve => { release = () => resolve(ok({ ok: true })); })
+  });
+  const pending = pool.request('/');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(pool.stats()[0].inflight, 1);
+  release();
+  await pending;
+  const success = pool.stats()[0];
+  assert.equal(success.inflight, 0);
+  assert.equal(success.successes, 1);
+  assert.equal(success.attempts, 1);
+  assert.equal(typeof success.lastLatencyMs, 'number');
+  assert.equal(typeof success.ewmaLatencyMs, 'number');
+  assert.equal(typeof success.lastSuccessAt, 'number');
+
+  const controller = new AbortController();
+  const canceled = new PeerPool({ peers: [peers[0]], transport: () => new Promise(() => {}) });
+  const request = canceled.request('/', { signal: controller.signal });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(canceled.stats()[0].inflight, 1);
+  controller.abort(new Error('stop'));
+  await assert.rejects(request, /stop/);
+  assert.equal(canceled.stats()[0].inflight, 0);
+  assert.equal(canceled.stats()[0].failures, 0);
+  canceled.close(); pool.close();
+});

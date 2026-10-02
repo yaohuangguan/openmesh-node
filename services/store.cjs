@@ -7,6 +7,12 @@ class RegistryAdapter {
   renew() { throw new Error('RegistryAdapter.renew() is not implemented'); }
   deregister() { throw new Error('RegistryAdapter.deregister() is not implemented'); }
   list() { throw new Error('RegistryAdapter.list() is not implemented'); }
+  snapshot(service) {
+    const instances = this.list(service);
+    return instances && typeof instances.then === 'function'
+      ? instances.then(value => ({ service, instances: value }))
+      : { service, instances };
+  }
   subscribe() { throw new Error('RegistryAdapter.subscribe() is not implemented'); }
   close() {}
 }
@@ -69,11 +75,15 @@ class ServiceRegistry extends RegistryAdapter {
   constructor({ maxInstances = 10000, sweepInterval = 1000, now = Date.now } = {}) {
     super();
     if (!Number.isSafeInteger(maxInstances) || maxInstances < 1 || !Number.isSafeInteger(sweepInterval) || sweepInterval < 0 || typeof now !== 'function') throw new TypeError('Invalid registry options');
-    this._instances = new Map(); this._now = now; this._max = maxInstances; this._subscriptions = new Map();
+    this._instances = new Map(); this._now = now; this._max = maxInstances; this._subscriptions = new Map(); this._revisions = new Map();
     this._timer = sweepInterval ? setInterval(() => this.sweep(), sweepInterval) : null;
     this._timer?.unref();
   }
-  _changed(service, reason) { notify(this._subscriptions, service, Object.freeze({ service, reason })); }
+  _changed(service, reason) {
+    const revision = (this._revisions.get(service) || 0) + 1;
+    this._revisions.set(service, revision);
+    notify(this._subscriptions, service, Object.freeze({ service, reason, revision }));
+  }
   sweep() {
     const now = this._now(), changed = new Set();
     for (const [key, record] of this._instances) {
@@ -114,8 +124,12 @@ class ServiceRegistry extends RegistryAdapter {
     name(service); this.sweep();
     return [...this._instances.values()].filter(record => record.service === service).map(({ leaseId, ...instance }) => ({ ...instance })).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   }
+  snapshot(service) {
+    const instances = this.list(service);
+    return Object.freeze({ service, revision: this._revisions.get(service) || 0, instances: freeze(instances) });
+  }
   subscribe(service, listener) { name(service); return subscribe(this._subscriptions, service, listener); }
-  close() { clearInterval(this._timer); this._timer = null; this._subscriptions.clear(); }
+  close() { clearInterval(this._timer); this._timer = null; this._subscriptions.clear(); this._revisions.clear(); }
 }
 
 class ConfigStore extends ConfigAdapter {

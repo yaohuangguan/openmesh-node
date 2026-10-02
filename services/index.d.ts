@@ -3,6 +3,7 @@ import type { Plugin } from '../index.js';
 
 export type MaybePromise<T> = T | Promise<T>;
 export interface Instance { service: string; id: string; url: string; ttl: number; expiresAt: number; metadata: Readonly<Record<string, unknown>>; }
+export interface ServiceSnapshot { service: string; revision?: number; instances: readonly Instance[]; }
 export interface Lease extends Instance { leaseId: string; }
 export interface ConfigSnapshot { namespace: string; epoch: string; revision: number; values: Readonly<Record<string, unknown>>; }
 export interface RegistrationOptions { id: string; url: string; ttl?: number; metadata?: Record<string, unknown>; onError?: (error: Error) => void; }
@@ -12,6 +13,7 @@ export class RegistryAdapter {
   renew(service: string, id: string, leaseId: string): MaybePromise<Lease>;
   deregister(service: string, id: string, leaseId: string): MaybePromise<void>;
   list(service: string): MaybePromise<Instance[]>;
+  snapshot(service: string): MaybePromise<ServiceSnapshot>;
   subscribe(service: string, listener: () => void): MaybePromise<() => void>;
   close(): MaybePromise<void>;
 }
@@ -26,8 +28,8 @@ export class ServiceRegistry extends RegistryAdapter {
   register(service: string, id: string, options: Omit<RegistrationOptions, 'id' | 'onError'>): Lease;
   renew(service: string, id: string, leaseId: string): Lease;
   deregister(service: string, id: string, leaseId: string): void;
-  list(service: string): Instance[]; sweep(): void;
-  subscribe(service: string, listener: () => void): () => void;
+  list(service: string): Instance[]; snapshot(service: string): ServiceSnapshot; sweep(): void;
+  subscribe(service: string, listener: (change?: { service: string; reason: string; revision: number }) => void): () => void;
   close(): void;
 }
 export class ConfigStore extends ConfigAdapter {
