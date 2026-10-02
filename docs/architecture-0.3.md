@@ -19,6 +19,8 @@ selection -> deadline -> retry -> circuit -> transport
 
 ControlClient
        |
+       +---- protocol metadata / capability check
+       |
        v
 Control plane API
        |
@@ -43,6 +45,12 @@ Adapters may implement `subscribe(...)`. Streaming watch endpoints require subsc
 
 The built-in `ServiceRegistry` and `ConfigStore` remain process-local development defaults. They are not durable consensus stores.
 
+## Versioned control protocol
+
+The control-plane HTTP boundary now exposes authenticated `GET /_mesh/meta`. It identifies the `openmesh-control` protocol major version and advertises optional capabilities such as service/config streaming watches and revisioned membership.
+
+`ControlClient.info()` performs an explicit compatibility check. Normal registration, discovery, and configuration calls do not run the handshake automatically, avoiding an extra RTT on existing deployments. A future standalone Go control plane can therefore target the protocol contract instead of reproducing Node implementation details.
+
 ## Push watches
 
 0.3 adds authenticated Server-Sent Events endpoints:
@@ -58,7 +66,7 @@ This removes steady-state one-request-per-interval polling from normal 0.3 deplo
 
 ## Lifecycle
 
-`app.onShutdown()` runs before the HTTP listener begins draining. It is intended for long-lived connections such as watch streams.
+`app.onShutdown()` runs before the HTTP listener begins draining. It is intended for long-lived connections such as watch streams and for removing a service registration before the node stops accepting new work through discovery.
 
 `app.onClose()` remains the final cleanup phase after request draining. A control plane therefore closes SSE watches during shutdown instead of waiting for the force-close timeout.
 
@@ -100,8 +108,8 @@ The next 0.3 work should build on these boundaries rather than enlarge the core 
 2. OpenTelemetry context and exporter integration;
 3. request-path profiling and regression budgets;
 4. streaming peer responses and richer transport metrics;
-5. optional load-aware peer selection for unkeyed traffic;
-6. hardened server timeout/header/body defaults;
+5. peer backpressure and bounded admission controls;
+6. protocol-level authentication/authorization beyond one shared bearer token;
 7. an optional standalone Go control plane implementing the same protocol.
 
 Performance changes must be compared against the same commit/environment baseline. One-second smoke benchmarks are only harness checks and are not release evidence.
@@ -115,4 +123,4 @@ SSE watch events carry `id` values. Config events use `<epoch>:<revision>` and s
 
 ## Peer transport telemetry
 
-`PeerPool.stats()` now reports successes, in-flight requests, last/EWMA latency and last success/failure timestamps in addition to attempts and circuit state. Caller cancellation releases in-flight accounting without incrementing peer failures. These metrics are deliberately transport-local and are suitable inputs for future load-aware selection and OpenTelemetry export.
+`PeerPool.stats()` now reports successes, in-flight requests, last/EWMA latency and last success/failure timestamps in addition to attempts and circuit state. Caller cancellation releases in-flight accounting without incrementing peer failures. Unkeyed traffic uses a power-of-two-choice (`p2c`) decision over the first two rendezvous candidates, preferring a candidate with a healthier circuit, fewer recent failures, less in-flight work, and then lower EWMA latency. Requests with an explicit key always keep pure rendezvous ordering so affinity remains stable. These metrics are deliberately transport-local and remain suitable for OpenTelemetry export.
