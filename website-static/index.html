@@ -5,9 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="OpenMesh is a TypeScript service runtime for Node.js with native HTTP, service discovery, live configuration and resilient peer routing." />
     <meta name="theme-color" content="#05070a" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenMesh — Build services. Skip the glue." />
+    <meta property="og:description" content="A TypeScript service runtime for Node.js with native HTTP, discovery, live configuration and resilient peer routing." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>OpenMesh — Build services. Skip the glue.</title>
-    <script type="module" crossorigin src="/assets/index-BHl0j7ze.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DVkLo9mR.css">
+    <script type="module" crossorigin src="/assets/index-lavb9rKo.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-p9GUT_Xm.css">
   </head>
   <body>
     <header class="topbar">
@@ -21,6 +26,7 @@
         <a href="#runtime">Runtime</a>
         <a href="#mesh">Mesh</a>
         <a href="#control">Control plane</a>
+        <a href="#protocol">Protocol</a>
         <a href="https://github.com/yaohuangguan/openmesh-node/tree/master/docs">Docs</a>
       </nav>
       <a class="github-link" href="https://github.com/yaohuangguan/openmesh-node">GitHub <span>↗</span></a>
@@ -112,6 +118,29 @@
           <span>scroll into the system</span>
           <i></i>
         </a>
+      </section>
+
+      <section class="principles-band" aria-label="OpenMesh design principles">
+        <article>
+          <span>data path</span>
+          <strong>Native Node HTTP</strong>
+          <small>No second request engine in front of your handler.</small>
+        </article>
+        <article>
+          <span>state</span>
+          <strong>Version everything</strong>
+          <small>Membership revisions and config epoch + revision make change explicit.</small>
+        </article>
+        <article>
+          <span>change delivery</span>
+          <strong>Push first</strong>
+          <small>Authenticated SSE carries snapshots; polling remains a compatibility fallback.</small>
+        </article>
+        <article>
+          <span>failure</span>
+          <strong>Degrade deliberately</strong>
+          <small>Deadlines, retry policy, circuit state and lease ownership are explicit.</small>
+        </article>
       </section>
 
       <section id="runtime" class="technical-section runtime-section">
@@ -324,9 +353,109 @@
         </div>
       </section>
 
-      <section class="technical-section typescript-section">
+      <section id="protocol" class="technical-section protocol-section">
         <div class="tech-rail">
           <span class="rail-number">04</span>
+          <span class="rail-label">protocol surface</span>
+        </div>
+
+        <div class="tech-content">
+          <div class="section-intro">
+            <p class="tech-kicker">The wire contract</p>
+            <h2>A small protocol with explicit state semantics.</h2>
+            <p>
+              The control plane is an HTTP boundary, not an implementation detail.
+              Registration, discovery and configuration can move to another storage
+              implementation as long as these lease, revision and watch semantics stay intact.
+            </p>
+          </div>
+
+          <div class="protocol-table-wrap">
+            <div class="protocol-table">
+              <div class="protocol-row protocol-head">
+                <span>method</span><span>path below /_mesh</span><span>semantic</span>
+              </div>
+              <div class="protocol-row">
+                <span class="method post">POST</span>
+                <code>/services/:service/instances/:id</code>
+                <span>create an expiring lease</span>
+              </div>
+              <div class="protocol-row">
+                <span class="method put">PUT</span>
+                <code>/services/:service/instances/:id/lease</code>
+                <span>ownership-safe lease renewal</span>
+              </div>
+              <div class="protocol-row">
+                <span class="method delete">DELETE</span>
+                <code>/services/:service/instances/:id</code>
+                <span>lease-scoped deregistration</span>
+              </div>
+              <div class="protocol-row">
+                <span class="method get">GET</span>
+                <code>/services/:service</code>
+                <span>revisioned discovery pages</span>
+              </div>
+              <div class="protocol-row">
+                <span class="method get">GET</span>
+                <code>/watch/services/:service</code>
+                <span>resumable SSE membership snapshots</span>
+              </div>
+              <div class="protocol-row">
+                <span class="method get">GET</span>
+                <code>/config/:namespace</code>
+                <span>epoch + revision snapshot</span>
+              </div>
+              <div class="protocol-row">
+                <span class="method put">PUT</span>
+                <code>/config/:namespace</code>
+                <span>compare-and-swap replacement</span>
+              </div>
+              <div class="protocol-row">
+                <span class="method get">GET</span>
+                <code>/watch/config/:namespace</code>
+                <span>resumable SSE config snapshots</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="failure-model">
+            <div class="failure-title">
+              <span>failure model</span>
+              <strong>What happens when the happy path stops.</strong>
+            </div>
+            <div class="failure-grid">
+              <article>
+                <span>caller abort</span>
+                <p>Inflight accounting is released without recording a peer failure.</p>
+              </article>
+              <article>
+                <span>unsafe write</span>
+                <p>Mutating requests are not retried implicitly by default.</p>
+              </article>
+              <article>
+                <span>stale owner</span>
+                <p>An old lease ID cannot remove or renew a replacement registration.</p>
+              </article>
+              <article>
+                <span>watch reconnect</span>
+                <p><code>Last-Event-ID</code> suppresses duplicate state and converges on the current snapshot.</p>
+              </article>
+              <article>
+                <span>invalid config</span>
+                <p>The last accepted immutable snapshot remains active when validation fails.</p>
+              </article>
+              <article>
+                <span>control outage</span>
+                <p>Application traffic is separate; registrations may expire if heartbeats cannot recover.</p>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="typescript" class="technical-section typescript-section">
+        <div class="tech-rail">
+          <span class="rail-number">05</span>
           <span class="rail-label">source model</span>
         </div>
 
@@ -359,9 +488,61 @@
         </div>
       </section>
 
-      <section class="technical-section code-section">
+      <section id="scope" class="technical-section scope-section">
         <div class="tech-rail">
-          <span class="rail-number">05</span>
+          <span class="rail-number">06</span>
+          <span class="rail-label">operational scope</span>
+        </div>
+
+        <div class="tech-content">
+          <div class="section-intro">
+            <p class="tech-kicker">Boundary conditions</p>
+            <h2>Know exactly what the runtime does not promise.</h2>
+            <p>
+              The built-in pieces are intentionally small. Production durability,
+              platform health policy and distributed consensus stay outside the core
+              unless an external adapter or deployment system provides them.
+            </p>
+          </div>
+
+          <div class="boundary-grid">
+            <article>
+              <span>built-in state</span>
+              <strong>Process-local memory</strong>
+              <p>Registry and configuration state are lost on restart. They are defaults for local clusters, tests and early deployments — not replicated storage.</p>
+            </article>
+            <article>
+              <span>consistency</span>
+              <strong>No hidden consensus</strong>
+              <p>The runtime does not provide leader election, distributed transactions or multi-writer consensus. Durable adapters define those guarantees.</p>
+            </article>
+            <article>
+              <span>network</span>
+              <strong>Known HTTP peers</strong>
+              <p>Peer routing operates over known service URLs. NAT traversal, overlay networking and DHT membership are outside the current model.</p>
+            </article>
+            <article>
+              <span>authorization</span>
+              <strong>Shared control token</strong>
+              <p>The bundled control plane authenticates with a Bearer token. It does not provide RBAC, audit history or secret-management semantics.</p>
+            </article>
+            <article>
+              <span>health</span>
+              <strong>Lease ≠ route health</strong>
+              <p>A current registration proves lease ownership, not that every application route is healthy. Keep platform health checks and traffic policy.</p>
+            </article>
+            <article>
+              <span>extensibility</span>
+              <strong>Adapters own the upgrade path</strong>
+              <p>RegistryAdapter and ConfigAdapter let external stores preserve the public protocol without entering the application request path.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="start" class="technical-section code-section">
+        <div class="tech-rail">
+          <span class="rail-number">07</span>
           <span class="rail-label">start here</span>
         </div>
 
