@@ -30,10 +30,10 @@ The bundled control plane stores state in one process's memory. Use it for local
 
 ## Start a service
 
-Requires Node.js 22+. The npm release is prepared; initial publication is pending maintainer authentication. Until publication completes:
+Requires Node.js 22+. Install from npm:
 
 ```sh
-npm install github:yaohuangguan/openmesh-node
+npm install openmesh-node
 ```
 
 Save as `server.mjs`:

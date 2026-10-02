@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="OpenMesh is a TypeScript service runtime for Node.js with native HTTP, service discovery, live configuration and resilient peer routing." />
+    <meta name="theme-color" content="#05070a" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenMesh — Build services. Skip the glue." />
+    <meta property="og:description" content="A TypeScript service runtime for Node.js with native HTTP, discovery, live configuration and resilient peer routing." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>OpenMesh — Build services. Skip the glue.</title>
+    <script type="module" crossorigin src="/assets/index-lavb9rKo.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-p9GUT_Xm.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="OpenMesh home">
+        <span class="brand-glyph" aria-hidden="true">
+          <i></i><i></i><i></i>
+        </span>
+        <span>OpenMesh</span>
+      </a>
+      <nav class="nav">
+        <a href="#runtime">Runtime</a>
+        <a href="#mesh">Mesh</a>
+        <a href="#control">Control plane</a>
+        <a href="#protocol">Protocol</a>
+        <a href="https://github.com/yaohuangguan/openmesh-node/tree/master/docs">Docs</a>
+      </nav>
+      <a class="github-link" href="https://github.com/yaohuangguan/openmesh-node">GitHub <span>↗</span></a>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-glow hero-glow-a"></div>
+        <div class="hero-glow hero-glow-b"></div>
+        <div class="hero-grid"></div>
+
+        <div class="hero-copy">
+          <div class="hero-eyebrow">
+            <span class="live-dot"></span>
+            TypeScript service runtime for Node.js
+          </div>
+
+          <h1>
+            Build services.
+            <span>Skip the glue.</span>
+          </h1>
+
+          <p class="hero-subtitle">
+            Native HTTP, discovery, live configuration and resilient peer routing —
+            composed as one small runtime.
+          </p>
+
+          <div class="hero-actions">
+            <a class="primary-action" href="#runtime">See the runtime <span>↓</span></a>
+            <a class="secondary-action" href="https://github.com/yaohuangguan/openmesh-node">View source <span>↗</span></a>
+          </div>
+
+          <div class="install-command">
+            <span class="prompt">$</span>
+            <code>npm install openmesh-node</code>
+            <button type="button" data-copy="npm install openmesh-node">copy</button>
+          </div>
+
+          <div class="hero-footnotes">
+            <span>Node.js ≥ 22</span>
+            <span>strict TypeScript</span>
+            <span>zero core runtime dependencies</span>
+          </div>
+        </div>
+
+        <div class="hero-system" aria-label="Animated OpenMesh topology">
+          <div class="system-orbit orbit-outer"></div>
+          <div class="system-orbit orbit-inner"></div>
+          <div class="system-beam beam-a"></div>
+          <div class="system-beam beam-b"></div>
+          <div class="system-beam beam-c"></div>
+          <div class="system-beam beam-d"></div>
+
+          <div class="system-core">
+            <span class="core-kicker">runtime</span>
+            <strong>OpenMesh</strong>
+            <small>request + service layer</small>
+          </div>
+
+          <div class="system-node node-a">
+            <span></span>
+            <strong>users-a</strong>
+            <small>healthy</small>
+          </div>
+          <div class="system-node node-b">
+            <span></span>
+            <strong>users-b</strong>
+            <small>healthy</small>
+          </div>
+          <div class="system-node node-c">
+            <span></span>
+            <strong>gateway</strong>
+            <small>routing</small>
+          </div>
+          <div class="system-node node-d control-node">
+            <span></span>
+            <strong>control</strong>
+            <small>watching</small>
+          </div>
+
+          <div class="system-packet packet-a"></div>
+          <div class="system-packet packet-b"></div>
+          <div class="system-caption">
+            registration · discovery · revisions · retries · circuits
+          </div>
+        </div>
+
+        <a class="scroll-cue" href="#runtime">
+          <span>scroll into the system</span>
+          <i></i>
+        </a>
+      </section>
+
+      <section class="principles-band" aria-label="OpenMesh design principles">
+        <article>
+          <span>data path</span>
+          <strong>Native Node HTTP</strong>
+          <small>No second request engine in front of your handler.</small>
+        </article>
+        <article>
+          <span>state</span>
+          <strong>Version everything</strong>
+          <small>Membership revisions and config epoch + revision make change explicit.</small>
+        </article>
+        <article>
+          <span>change delivery</span>
+          <strong>Push first</strong>
+          <small>Authenticated SSE carries snapshots; polling remains a compatibility fallback.</small>
+        </article>
+        <article>
+          <span>failure</span>
+          <strong>Degrade deliberately</strong>
+          <small>Deadlines, retry policy, circuit state and lease ownership are explicit.</small>
+        </article>
+      </section>
+
+      <section id="runtime" class="technical-section runtime-section">
+        <div class="tech-rail">
+          <span class="rail-number">01</span>
+          <span class="rail-label">runtime model</span>
+        </div>
+
+        <div class="tech-content">
+          <div class="section-intro">
+            <p class="tech-kicker">The data path</p>
+            <h2>Keep the request path boring.</h2>
+            <p>
+              Application traffic stays inside Node. The runtime handles routing,
+              middleware, validation, response serialization and graceful shutdown
+              without introducing a second request engine.
+            </p>
+          </div>
+
+          <div class="request-path">
+            <div class="path-step">
+              <span>01</span>
+              <strong>socket</strong>
+              <small>node:http</small>
+            </div>
+            <i>→</i>
+            <div class="path-step">
+              <span>02</span>
+              <strong>router</strong>
+              <small>static + params</small>
+            </div>
+            <i>→</i>
+            <div class="path-step">
+              <span>03</span>
+              <strong>middleware</strong>
+              <small>onion model</small>
+            </div>
+            <i>→</i>
+            <div class="path-step active">
+              <span>04</span>
+              <strong>handler</strong>
+              <small>your code</small>
+            </div>
+            <i>→</i>
+            <div class="path-step">
+              <span>05</span>
+              <strong>response</strong>
+              <small>serialize + send</small>
+            </div>
+          </div>
+
+          <div class="runtime-details">
+            <div class="detail-line">
+              <span class="detail-key">lifecycle</span>
+              <span class="detail-value">configure → ready → listen → drain → close</span>
+            </div>
+            <div class="detail-line">
+              <span class="detail-key">context</span>
+              <span class="detail-value">AsyncLocalStorage request scope with request ID + trace context</span>
+            </div>
+            <div class="detail-line">
+              <span class="detail-key">schema</span>
+              <span class="detail-value">compiler hooks for validation and response serialization</span>
+            </div>
+            <div class="detail-line">
+              <span class="detail-key">output</span>
+              <span class="detail-value">streams · bytes · strings · JSON · empty replies</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="mesh" class="technical-section mesh-section">
+        <div class="tech-rail">
+          <span class="rail-number">02</span>
+          <span class="rail-label">peer mesh</span>
+        </div>
+
+        <div class="tech-content">
+          <div class="section-intro">
+            <p class="tech-kicker">The service path</p>
+            <h2>A peer call is more than <code>fetch()</code>.</h2>
+            <p>
+              OpenMesh turns a changing set of service instances into a routable peer pool
+              with stable selection, deadlines, safe retries, circuit state and transport telemetry.
+            </p>
+          </div>
+
+          <div class="mesh-console">
+            <div class="console-topline">
+              <span>PeerPool / users</span>
+              <span class="console-live"><i></i> live topology</span>
+            </div>
+            <div class="peer-table">
+              <div class="peer-row peer-head">
+                <span>peer</span><span>state</span><span>inflight</span><span>ewma</span><span>selected</span>
+              </div>
+              <div class="peer-row">
+                <span class="peer-id"><i></i> users-a</span><span>closed</span><span>2</span><span>3.8ms</span><span class="selected">42, 47, 51</span>
+              </div>
+              <div class="peer-row">
+                <span class="peer-id"><i></i> users-b</span><span>closed</span><span>0</span><span>4.1ms</span><span class="selected">41, 44, 53</span>
+              </div>
+              <div class="peer-row degraded">
+                <span class="peer-id"><i></i> users-c</span><span>open</span><span>0</span><span>—</span><span class="selected">bypassed</span>
+              </div>
+            </div>
+            <div class="decision-trace">
+              <span class="trace-label">request /users/42</span>
+              <span class="trace-chip">key: 42</span>
+              <b>→</b>
+              <span class="trace-chip">users-a</span>
+              <b>→</b>
+              <span class="trace-chip success">200 · 3.2ms</span>
+            </div>
+          </div>
+
+          <div class="spec-grid">
+            <div>
+              <span>selection</span>
+              <strong>Rendezvous hashing</strong>
+              <p>Stable ownership for keyed traffic with minimal movement when peers change.</p>
+            </div>
+            <div>
+              <span>retry</span>
+              <strong>Safety first</strong>
+              <p>Unsafe methods are not retried implicitly. Deadlines cover the complete attempt chain.</p>
+            </div>
+            <div>
+              <span>circuit</span>
+              <strong>Per-peer state</strong>
+              <p>Failures isolate bad instances without poisoning healthy peers or caller cancellation.</p>
+            </div>
+            <div>
+              <span>telemetry</span>
+              <strong>Transport-local signals</strong>
+              <p>Attempts, successes, inflight, latency EWMA and last success/failure timestamps.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="control" class="technical-section control-section">
+        <div class="tech-rail">
+          <span class="rail-number">03</span>
+          <span class="rail-label">control plane</span>
+        </div>
+
+        <div class="tech-content">
+          <div class="section-intro">
+            <p class="tech-kicker">The state path</p>
+            <h2>Topology and config move as versioned state.</h2>
+            <p>
+              Registration uses expiring leases. Discovery snapshots carry monotonic revisions.
+              Configuration is immutable, compare-and-swap, and delivered over resumable SSE watches.
+            </p>
+          </div>
+
+          <div class="control-diagram">
+            <div class="control-services">
+              <div class="diagram-service">
+                <i></i><strong>users-a</strong><small>lease · 30s</small>
+              </div>
+              <div class="diagram-service">
+                <i></i><strong>users-b</strong><small>lease · 30s</small>
+              </div>
+              <div class="diagram-service">
+                <i></i><strong>gateway</strong><small>watching</small>
+              </div>
+            </div>
+
+            <div class="control-flow">
+              <span>register</span>
+              <span>heartbeat</span>
+              <span>discover</span>
+              <span>watch</span>
+            </div>
+
+            <div class="control-core">
+              <div class="control-title">
+                <span>control plane</span>
+                <strong>state boundary</strong>
+              </div>
+              <div class="control-stores">
+                <div>
+                  <span>RegistryAdapter</span>
+                  <strong>service revision 18</strong>
+                </div>
+                <div>
+                  <span>ConfigAdapter</span>
+                  <strong>prod:42 / rev 9</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="watch-stream">
+            <div class="stream-heading">
+              <span>SSE / _mesh/watch/services/users</span>
+              <span>Last-Event-ID: 17</span>
+            </div>
+            <pre><code><span class="muted">event:</span> snapshot
+<span class="muted">id:</span> 18
+<span class="muted">data:</span> {
+  <span class="key">"service"</span>: <span class="string">"users"</span>,
+  <span class="key">"revision"</span>: <span class="number">18</span>,
+  <span class="key">"instances"</span>: [<span class="string">"users-a"</span>, <span class="string">"users-b"</span>]
+}</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="protocol" class="technical-section protocol-section">
+        <div class="tech-rail">
+          <span class="rail-number">04</span>
+          <span class="rail-label">protocol surface</span>
+        </div>
+
+        <div class="tech-content">
+          <div class="section-intro">
+            <p class="tech-kicker">The wire contract</p>
+            <h2>A small protocol with explicit state semantics.</h2>
+            <p>
+              The control plane is an HTTP boundary, not an implementation detail.
+              Registration, discovery and configuration can move to another storage
+              implementation as long as these lease, revision and watch semantics stay intact.
+            </p>
+          </div>
+
+          <div class="protocol-table-wrap">
+            <div class="protocol-table">
+              <div class="protocol-row protocol-head">
+                <span>method</span><span>path below /_mesh</span><span>semantic</span>
+              </div>
+              <div class="protocol-row">
+                <span class="method post">POST</span>
+                <code>/services/:service/instances/:id</code>
+                <span>create an expiring lease</span>
+              </div>
+              <div class="protocol-row">
+                <span class="method put">PUT</span>
+                <code>/services/:service/instances/:id/lease</code>
+                <span>ownership-safe lease renewal</span>
+              </div>
+              <div class="protocol-row">
+                <span class="method delete">DELETE</span>
+                <code>/services/:service/instances/:id</code>
+                <span>lease-scoped deregistration</span>
+              </div>
+              <div class="protocol-row">
+                <span class="method get">GET</span>
+                <code>/services/:service</code>
+                <span>revisioned discovery pages</span>
+              </div>
+              <div class="protocol-row">
+                <span class="method get">GET</span>
+                <code>/watch/services/:service</code>
+                <span>resumable SSE membership snapshots</span>
+              </div>
+              <div class="protocol-row">
+                <span class="method get">GET</span>
+                <code>/config/:namespace</code>
+                <span>epoch + revision snapshot</span>
+              </div>
+              <div class="protocol-row">
+                <span class="method put">PUT</span>
+                <code>/config/:namespace</code>
+                <span>compare-and-swap replacement</span>
+              </div>
+              <div class="protocol-row">
+                <span class="method get">GET</span>
+                <code>/watch/config/:namespace</code>
+                <span>resumable SSE config snapshots</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="failure-model">
+            <div class="failure-title">
+              <span>failure model</span>
+              <strong>What happens when the happy path stops.</strong>
+            </div>
+            <div class="failure-grid">
+              <article>
+                <span>caller abort</span>
+                <p>Inflight accounting is released without recording a peer failure.</p>
+              </article>
+              <article>
+                <span>unsafe write</span>
+                <p>Mutating requests are not retried implicitly by default.</p>
+              </article>
+              <article>
+                <span>stale owner</span>
+                <p>An old lease ID cannot remove or renew a replacement registration.</p>
+              </article>
+              <article>
+                <span>watch reconnect</span>
+                <p><code>Last-Event-ID</code> suppresses duplicate state and converges on the current snapshot.</p>
+              </article>
+              <article>
+                <span>invalid config</span>
+                <p>The last accepted immutable snapshot remains active when validation fails.</p>
+              </article>
+              <article>
+                <span>control outage</span>
+                <p>Application traffic is separate; registrations may expire if heartbeats cannot recover.</p>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="typescript" class="technical-section typescript-section">
+        <div class="tech-rail">
+          <span class="rail-number">05</span>
+          <span class="rail-label">source model</span>
+        </div>
+
+        <div class="tech-content">
+          <div class="section-intro">
+            <p class="tech-kicker">One source of truth</p>
+            <h2>TypeScript is the implementation.</h2>
+            <p>
+              The runtime is authored once under strict TypeScript and compiled into both module formats
+              plus declarations. There is no parallel JavaScript implementation and no hand-maintained type mirror.
+            </p>
+          </div>
+
+          <div class="build-pipeline">
+            <div class="source-block">
+              <span>source</span>
+              <strong>src/**/*.ts</strong>
+              <small>strict · noUncheckedIndexedAccess</small>
+            </div>
+            <div class="build-arrow">
+              <span>tsc</span>
+              <i></i>
+            </div>
+            <div class="output-stack">
+              <div><span>runtime</span><strong>dist/esm</strong></div>
+              <div><span>runtime</span><strong>dist/cjs</strong></div>
+              <div><span>types</span><strong>dist/types</strong></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="scope" class="technical-section scope-section">
+        <div class="tech-rail">
+          <span class="rail-number">06</span>
+          <span class="rail-label">operational scope</span>
+        </div>
+
+        <div class="tech-content">
+          <div class="section-intro">
+            <p class="tech-kicker">Boundary conditions</p>
+            <h2>Know exactly what the runtime does not promise.</h2>
+            <p>
+              The built-in pieces are intentionally small. Production durability,
+              platform health policy and distributed consensus stay outside the core
+              unless an external adapter or deployment system provides them.
+            </p>
+          </div>
+
+          <div class="boundary-grid">
+            <article>
+              <span>built-in state</span>
+              <strong>Process-local memory</strong>
+              <p>Registry and configuration state are lost on restart. They are defaults for local clusters, tests and early deployments — not replicated storage.</p>
+            </article>
+            <article>
+              <span>consistency</span>
+              <strong>No hidden consensus</strong>
+              <p>The runtime does not provide leader election, distributed transactions or multi-writer consensus. Durable adapters define those guarantees.</p>
+            </article>
+            <article>
+              <span>network</span>
+              <strong>Known HTTP peers</strong>
+              <p>Peer routing operates over known service URLs. NAT traversal, overlay networking and DHT membership are outside the current model.</p>
+            </article>
+            <article>
+              <span>authorization</span>
+              <strong>Shared control token</strong>
+              <p>The bundled control plane authenticates with a Bearer token. It does not provide RBAC, audit history or secret-management semantics.</p>
+            </article>
+            <article>
+              <span>health</span>
+              <strong>Lease ≠ route health</strong>
+              <p>A current registration proves lease ownership, not that every application route is healthy. Keep platform health checks and traffic policy.</p>
+            </article>
+            <article>
+              <span>extensibility</span>
+              <strong>Adapters own the upgrade path</strong>
+              <p>RegistryAdapter and ConfigAdapter let external stores preserve the public protocol without entering the application request path.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="start" class="technical-section code-section">
+        <div class="tech-rail">
+          <span class="rail-number">07</span>
+          <span class="rail-label">start here</span>
+        </div>
+
+        <div class="tech-content">
+          <div class="section-intro compact-intro">
+            <p class="tech-kicker">Small core</p>
+            <h2>Use one layer. Or the whole runtime.</h2>
+          </div>
+
+          <div class="code-panel">
+            <div class="code-panel-top">
+              <span>server.ts</span>
+              <button type="button" data-copy="import openmesh from 'openmesh-node';&#10;import { jsonBody } from 'openmesh-node/plugins';&#10;&#10;const app = openmesh();&#10;app.use(jsonBody());&#10;&#10;app.get('/users/:id', ctx => ({ id: ctx.params.id }));&#10;&#10;await app.listen({ port: 3000 });">copy</button>
+            </div>
+            <pre><code><span class="purple">import</span> openmesh <span class="purple">from</span> <span class="string">'openmesh-node'</span>;
+<span class="purple">import</span> { jsonBody } <span class="purple">from</span> <span class="string">'openmesh-node/plugins'</span>;
+
+<span class="purple">const</span> app = <span class="cyan">openmesh</span>();
+app.<span class="cyan">use</span>(<span class="cyan">jsonBody</span>());
+
+app.<span class="cyan">get</span>(<span class="string">'/users/:id'</span>, ctx =&gt; ({
+  id: ctx.params.id
+}));
+
+<span class="purple">await</span> app.<span class="cyan">listen</span>({ port: <span class="number">3000</span> });</code></pre>
+          </div>
+
+          <div class="end-links">
+            <a href="https://www.npmjs.com/package/openmesh-node">npm package <span>↗</span></a>
+            <a href="https://github.com/yaohuangguan/openmesh-node/tree/master/docs">technical docs <span>↗</span></a>
+            <a href="https://github.com/yaohuangguan/openmesh-node">source <span>↗</span></a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="footer-brand">
+        <span class="brand-glyph" aria-hidden="true"><i></i><i></i><i></i></span>
+        <strong>OpenMesh</strong>
+      </div>
+      <p>Experimental open-source service runtime for Node.js.</p>
+      <span>MIT · 2026</span>
+    </footer>
+  </body>
+</html>
