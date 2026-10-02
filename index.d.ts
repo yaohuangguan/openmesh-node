@@ -4,8 +4,13 @@ export type Next = () => Promise<unknown>;
 export type Middleware = (ctx: Context, next: Next) => unknown | Promise<unknown>;
 export type Handler = (ctx: Context) => unknown | Promise<unknown>;
 export type ExpressMiddleware = (req: IncomingMessage, res: ServerResponse, next: (error?: unknown) => void) => unknown;
-export interface RouteOptions { middleware?: Middleware | Middleware[]; serializer?: (body: unknown) => string | Buffer; }
-export interface AppOptions { pluginTimeout?: number; shutdownTimeout?: number; server?: ServerOptions; }
+export interface RouteSchema { body?: unknown; querystring?: unknown; params?: unknown; headers?: unknown; response?: Record<string, unknown>; }
+export type Validator = ((value: unknown) => boolean | { error?: unknown } | Promise<boolean | { error?: unknown }>) & { errors?: unknown };
+export type ValidatorCompiler = (context: { schema: unknown; method: string; url: string; httpPart: 'body' | 'querystring' | 'params' | 'headers' }) => Validator;
+export type SerializerCompiler = (context: { schema: unknown; method: string; url: string; httpStatus: string }) => (body: unknown) => string | Buffer;
+export interface RouteOptions { middleware?: Middleware | Middleware[]; serializer?: (body: unknown) => string | Buffer; schema?: RouteSchema; }
+export interface ServerLimits { requestTimeout?: number; headersTimeout?: number; keepAliveTimeout?: number; maxHeadersCount?: number; }
+export interface AppOptions { pluginTimeout?: number; shutdownTimeout?: number; server?: ServerOptions; serverLimits?: ServerLimits; validatorCompiler?: ValidatorCompiler; serializerCompiler?: SerializerCompiler; }
 export interface PluginOptions { prefix?: string; [key: string]: unknown; }
 export type Plugin = (app: OpenMesh, options: PluginOptions, done: (error?: Error) => void) => void | Promise<void>;
 export class HttpError extends Error { statusCode: number; expose: boolean; code: string; constructor(statusCode: number, message?: string, options?: ErrorOptions & { code?: string }); }
@@ -30,6 +35,8 @@ export class OpenMesh {
   route(method: string, path: string, options: RouteOptions, handler: Handler): this;
   get: RouteMethod; head: RouteMethod; post: RouteMethod; put: RouteMethod; patch: RouteMethod; delete: RouteMethod; options: RouteMethod; trace: RouteMethod; all: RouteMethod;
   register(plugin: Plugin, options?: PluginOptions): this;
+  setValidatorCompiler(compiler: ValidatorCompiler): this;
+  setSerializerCompiler(compiler: SerializerCompiler): this;
   decorate(name: string, value: unknown): this; hasPlugin(name: string): boolean;
   onShutdown(hook: (app: OpenMesh) => void | Promise<void>): this;
   onClose(hook: (app: OpenMesh) => void | Promise<void>): this;

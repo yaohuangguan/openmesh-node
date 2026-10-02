@@ -161,3 +161,55 @@ test('shutdown hook failures do not skip listener drain or close hooks', async (
   assert.equal(closed, true);
   assert.equal(app.phase, 'closed');
 });
+
+
+test('route schema compilers validate inputs and serialize matching response statuses', async t => {
+  const app = openmesh();
+  app.setValidatorCompiler(({ schema }) => value => typeof value?.[schema.required] === schema.type);
+  app.setSerializerCompiler(({ schema }) => value => JSON.stringify({ [schema.pick]: value[schema.pick] }));
+  app.use(jsonBody());
+  app.post('/users', {
+    schema: {
+      body: { required: 'name', type: 'string' },
+      response: { '2xx': { pick: 'name' } }
+    }
+  }, ctx => ({ name: ctx.requestBody.name, internal: true }));
+  const url = await serve(t, app);
+  const ok = await request(url, '/users', { method: 'POST', body: { name: 'Sam' } });
+  assert.deepEqual(ok.json(), { name: 'Sam' });
+  const invalid = await request(url, '/users', { method: 'POST', body: { name: 42 } });
+  assert.equal(invalid.status, 400);
+  assert.deepEqual(invalid.json(), { error: 'Validation failed for body' });
+});
+
+test('schema routes fail startup when required compilers are missing', async () => {
+  await assert.rejects(openmesh().get('/', { schema: { params: {} } }, () => 'ok').ready(), /validator compiler/);
+  const withValidator = openmesh().setValidatorCompiler(() => () => true).get('/', { schema: { response: { 200: {} } } }, () => ({}));
+  await assert.rejects(withValidator.ready(), /serializer compiler/);
+});
+
+test('JSON parser rejects prototype keys by default and can remove them explicitly', async t => {
+  const strict = openmesh().use(jsonBody()).post('/', ctx => ctx.requestBody);
+  const strictUrl = await serve(t, strict);
+  const unsafe = await request(strictUrl, '/', { method: 'POST', body: '{"__proto__":{"polluted":true}}', headers: { 'content-type': 'application/json' } });
+  assert.equal(unsafe.status, 400);
+  assert.equal({}.polluted, undefined);
+
+  const removing = openmesh().use(jsonBody({ prototypeAction: 'remove' })).post('/', ctx => ctx.requestBody);
+  const removingUrl = await serve(t, removing);
+  const cleaned = await request(removingUrl, '/', { method: 'POST', body: '{"safe":1,"constructor":{"prototype":{"polluted":true}}}', headers: { 'content-type': 'application/json' } });
+  assert.deepEqual(cleaned.json(), { safe: 1 });
+  assert.equal({}.polluted, undefined);
+});
+
+test('server hardening limits are explicit and configurable', async () => {
+  const app = openmesh({ serverLimits: { requestTimeout: 90000, headersTimeout: 8000, keepAliveTimeout: 4000, maxHeadersCount: 64 } }).get('/', () => 'ok');
+  await app.listen({ port: 0 });
+  try {
+    assert.equal(app.server.requestTimeout, 90000);
+    assert.equal(app.server.headersTimeout, 8000);
+    assert.equal(app.server.keepAliveTimeout, 4000);
+    assert.equal(app.server.maxHeadersCount, 64);
+  } finally { await app.close(); }
+  assert.throws(() => openmesh({ serverLimits: { requestTimeout: 1000, headersTimeout: 2000 } }), /cannot exceed/);
+});

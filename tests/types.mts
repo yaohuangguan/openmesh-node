@@ -23,3 +23,10 @@ const membership = await control.watchService('users', { onUpdate: instances => 
 membership.stop(); await control.close();
 const registry = new ServiceRegistry(); registry.subscribe('users', () => {})(); registry.close();
 const store = new ConfigStore(); const unsubscribe = store.subscribe('users', () => {}); const initial = store.snapshot('users'); store.replace('users', {}, initial.revision, initial.epoch); unsubscribe(); store.close();
+
+const schemaApp = openmesh({ serverLimits: { requestTimeout: 120000, headersTimeout: 10000, keepAliveTimeout: 5000, maxHeadersCount: 100 } });
+schemaApp
+  .setValidatorCompiler(({ schema }) => value => typeof value === 'object' && value !== null && typeof schema === 'object')
+  .setSerializerCompiler(() => body => JSON.stringify(body))
+  .use(jsonBody({ prototypeAction: 'remove' }))
+  .post('/schema', { schema: { body: { type: 'object' }, response: { '2xx': { type: 'object' } } } }, ctx => ctx.requestBody);

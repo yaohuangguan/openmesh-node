@@ -6,7 +6,16 @@ The core uses Node built-ins. Configure routes and plugins before startup; `read
 
 ```js
 import openmesh, { definePlugin, HttpError } from 'openmesh-node';
-const app = openmesh({ pluginTimeout: 10000, shutdownTimeout: 5000 });
+const app = openmesh({
+  pluginTimeout: 10000,
+  shutdownTimeout: 5000,
+  serverLimits: {
+    requestTimeout: 120000,
+    headersTimeout: 10000,
+    keepAliveTimeout: 5000,
+    maxHeadersCount: 100
+  }
+});
 ```
 
 | API | Behavior |
@@ -16,22 +25,51 @@ const app = openmesh({ pluginTimeout: 10000, shutdownTimeout: 5000 });
 | `route(method, path, [options], handler)` | Custom uppercase method |
 | `use(async (ctx, next) => …)` | Scoped onion middleware |
 | `register(plugin, { prefix, …options })` | Scoped startup plugin |
+| `setValidatorCompiler(fn)` | Scoped route-schema validator compiler |
+| `setSerializerCompiler(fn)` | Scoped response-schema serializer compiler |
 | `decorate(name, value)` | Add a property visible to the scope and descendants |
 | `hasPlugin(name)` | Check named plugins visible in this scope |
 | `onListen((app, address) => …)` | Await startup work after binding; failure closes the listener |
-| `onClose(fn)` | Register a cleanup hook; reverse registration order |
+| `onShutdown(fn)` | Pre-drain cleanup for long-lived resources |
+| `onClose(fn)` | Final cleanup hook; reverse registration order |
 | `setErrorHandler((error, ctx) => …)` | Scoped error handler |
-| `setNotFoundHandler(ctx => …)` | Application-wide 404 handler |
+| `setNotFoundHandler(ctx => …)` | Scoped/prefixed 404 handler |
 | `ready()` | Boot once; return a Promise |
 | `callback()` | Return the native Node request listener |
 | `listen({ port, host, … })` | Boot and bind; default loopback, ephemeral port |
 | `close({ timeout })` | Stop accepts, drain requests, then destroy stalled sockets and run hooks |
 
-`app.server` exposes the owned Node HTTP server after `listen()`. `callback()` is usable with an externally owned server after `await app.ready()`; the external owner must close that server itself. Configuration freezes when boot completes. The `server` factory option supplies Node `http.createServer()` options; listen options are passed to `server.listen()`.
+`app.server` exposes the owned Node HTTP server after `listen()`. `callback()` is usable with an externally owned server after `await app.ready()`; the external owner must close that server itself. Configuration freezes when boot completes. The `server` factory option supplies Node `http.createServer()` options; listen options are passed to `server.listen()`. OpenMesh also applies explicit `serverLimits` defaults: 120 s request timeout, 10 s headers timeout, 5 s keep-alive timeout and 100 request headers. Override them when a workload has different requirements.
 
 Routes are case-sensitive and trailing slashes are significant. Static routes take precedence over parameters, then wildcards. Parameter values decode when accessed. A terminal wildcard, `/files/*`, captures the remainder in `ctx.params['*']`. Regex routes and optional parameters are not supported. Duplicate method/path registrations fail at configuration time.
 
 HEAD falls back to GET with its body suppressed. A matching path with another method returns 405 and `Allow`; unmatched paths return 404. Native routes take precedence over mounted engines. Mounts use the longest matching literal prefix.
+
+
+## Route schemas
+
+OpenMesh 0.3 exposes compiler contracts without bundling a schema library. A scope can provide validator and serializer compilers, then routes can declare body/query/params/header and response schemas.
+
+```js
+app.setValidatorCompiler(({ schema, httpPart }) => {
+  // Example only: plug in Ajv, TypeBox, Zod adapters, or another compiler here.
+  return value => validateWithYourLibrary(schema, value, httpPart);
+});
+app.setSerializerCompiler(({ schema, httpStatus }) => {
+  return value => serializeWithYourLibrary(schema, value, httpStatus);
+});
+
+app.post('/users', {
+  schema: {
+    body: userInputSchema,
+    response: { '2xx': publicUserSchema }
+  }
+}, ctx => createUser(ctx.requestBody));
+```
+
+Validators may be synchronous or asynchronous and return `true`/`false` (or an object containing `error`). Failed validation returns HTTP 400 with code `VALIDATION_ERROR`. Response serializers are synchronous. Exact statuses, class patterns such as `2xx`, and `default` are supported. Route schemas require the matching compiler; startup fails rather than silently ignoring a schema.
+
+The compiler is inherited by child plugin scopes and can be overridden inside a scope. Routes without schemas keep the direct handler path.
 
 ## Context
 
@@ -73,12 +111,12 @@ Without a custom handler, 4xx `HttpError` messages are exposed and 5xx responses
 
 ```js
 import { jsonBody, requestContext, health } from 'openmesh-node/plugins';
-app.use(jsonBody({ limit: 1024 * 1024 }));
+app.use(jsonBody({ limit: 1024 * 1024, prototypeAction: 'error' }));
 app.use(requestContext({ service: 'users', requestIdHeader: 'x-request-id' }));
 app.register(health({ ready: async () => database.isConnected() }));
 ```
 
-`jsonBody` parses JSON/+json POST, PUT, PATCH and DELETE requests. Invalid JSON returns 400; over-limit bodies return 413. It does not parse forms, multipart uploads, compressed payloads, or validate application schemas. Set a route-level parser where appropriate.
+`jsonBody` parses JSON/+json POST, PUT, PATCH and DELETE requests. Invalid JSON returns 400; over-limit bodies return 413. By default it rejects `__proto__` and `constructor` keys to reduce prototype-pollution hazards in downstream code. Set `prototypeAction: 'remove'` to strip those keys or `'ignore'` only when the application intentionally accepts them. It does not parse forms, multipart uploads, compressed payloads, or validate application schemas.
 
 `requestContext` validates or generates a request ID, carries a valid version-00 trace ID forward, and generates a new span ID. It sets response headers and `ctx.state.outboundHeaders` for explicit propagation. It does not create/export telemetry spans or carry `tracestate`/baggage.
 

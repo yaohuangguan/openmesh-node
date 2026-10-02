@@ -14,7 +14,7 @@ Version **0.2.0 is experimental**. The performance goal is a substantial, reprod
 
 ## What is included
 
-- Native HTTP routing, async handlers, streams, scoped plugins, and graceful shutdown.
+- Native HTTP routing, async handlers, streams, scoped plugins, route-schema compiler hooks, and graceful shutdown.
 - Node/Express middleware and complete Express application mounts.
 - Fastify plugins inside an actual, optionally installed Fastify 5 instance.
 - HTTP peer routing with rendezvous hashing, deadlines, retries, circuits, and bounded broadcasts.

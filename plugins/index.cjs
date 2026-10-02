@@ -1,8 +1,24 @@
 'use strict';
 const { randomUUID, randomBytes } = require('node:crypto');
 const { HttpError } = require('../lib/context.cjs');
-function jsonBody({ limit = 1024 * 1024 } = {}) {
+function protectPrototypeKeys(value, action) {
+  if (action === 'ignore' || value === null || typeof value !== 'object') return value;
+  const pending = [value];
+  while (pending.length) {
+    const current = pending.pop();
+    for (const key of Object.keys(current)) {
+      if (key === '__proto__' || key === 'constructor') {
+        if (action === 'error') throw new HttpError(400, 'JSON body contains forbidden prototype keys', { code: 'UNSAFE_JSON_KEY' });
+        delete current[key]; continue;
+      }
+      const child = current[key]; if (child && typeof child === 'object') pending.push(child);
+    }
+  }
+  return value;
+}
+function jsonBody({ limit = 1024 * 1024, prototypeAction = 'error' } = {}) {
   if (!Number.isSafeInteger(limit) || limit <= 0) throw new TypeError('Body limit must be a positive integer');
+  if (!['error', 'remove', 'ignore'].includes(prototypeAction)) throw new TypeError('prototypeAction must be error, remove or ignore');
   return async (ctx, next) => {
     const type = (ctx.get('content-type') || '').split(';')[0].trim().toLowerCase();
     if (ctx.req.body !== undefined || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(ctx.method) || !(type === 'application/json' || type.endsWith('+json'))) return next();
@@ -17,7 +33,11 @@ function jsonBody({ limit = 1024 * 1024 } = {}) {
       function ended() { if (settled) return; settled = true; clean(); resolve(Buffer.concat(chunks, size)); }
       ctx.req.on('data', data); ctx.req.once('end', ended); ctx.req.once('error', failed); ctx.req.once('aborted', aborted);
     });
-    try { ctx.req.body = body.length ? JSON.parse(body.toString('utf8')) : undefined; } catch (_) { throw new HttpError(400, 'Invalid JSON body'); }
+    if (!body.length) ctx.req.body = undefined;
+    else {
+      let parsed; try { parsed = JSON.parse(body.toString('utf8')); } catch (_) { throw new HttpError(400, 'Invalid JSON body'); }
+      ctx.req.body = protectPrototypeKeys(parsed, prototypeAction);
+    }
     return next();
   };
 }

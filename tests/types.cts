@@ -14,3 +14,8 @@ app.onListen(scope => { const healthy: boolean | undefined = scope.registration?
 app.onShutdown(() => {});
 void client.watchService('users').then(watcher => watcher.stop());
 void client.close();
+
+const schemaApp = openmesh({ serverLimits: { maxHeadersCount: 100 } });
+schemaApp.setValidatorCompiler(() => () => true).setSerializerCompiler(() => body => JSON.stringify(body));
+schemaApp.use(plugins.jsonBody({ prototypeAction: 'error' }));
+schemaApp.post('/schema', { schema: { body: {}, response: { 200: {} } } }, ctx => ctx.requestBody);
