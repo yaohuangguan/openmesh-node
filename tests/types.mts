@@ -1,6 +1,7 @@
 import openmesh, { definePlugin, HttpError, type Context } from 'openmesh-node';
 import { jsonBody, requestContext, health } from 'openmesh-node/plugins';
 import { PeerPool } from 'openmesh-node/mesh';
+import { ControlClient, controlPlane, serviceRegistration, ConfigStore } from 'openmesh-node/services';
 const app = openmesh();
 app.use(jsonBody()).use(requestContext()).register(health());
 app.get('/users/:id', (ctx: Context) => ({ id: ctx.params.id }));
@@ -9,3 +10,12 @@ app.setErrorHandler((error, ctx) => { ctx.status = error instanceof HttpError ? 
 const peers = new PeerPool({ peers: [{ id: 'local', url: 'http://127.0.0.1:3000' }] });
 await peers.json('/users/42', { key: '42', timeout: 1000 });
 peers.close();
+const control = new ControlClient({ url: 'http://127.0.0.1:4000/_mesh', token: 'example-token-value' });
+app.register(controlPlane({ token: 'example-token-value' }));
+app.register(serviceRegistration({ client: control, service: 'users', id: 'users-a', url: address => typeof address === 'object' && address ? 'http://127.0.0.1:' + address.port : 'http://127.0.0.1:3000' }));
+app.onListen(async scope => { const healthy: boolean | undefined = scope.registration?.healthy; void healthy; });
+const snapshot = await control.getConfig('users');
+await control.setConfig('users', { greeting: 'Hello' }, { expectedRevision: snapshot.revision, expectedEpoch: snapshot.epoch });
+const config = await control.watchConfig('users', { validate: values => { if (typeof values.greeting !== 'string') throw new Error('invalid greeting'); } });
+config.stop(); await control.close();
+const store = new ConfigStore(); const initial = store.snapshot('users'); store.replace('users', {}, initial.revision, initial.epoch);

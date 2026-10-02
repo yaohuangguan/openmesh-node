@@ -98,6 +98,7 @@ class PeerPool {
     const method = (options.method || 'GET').toUpperCase(), headers = { ...options.headers };
     let body = options.body;
     if (body !== undefined && body !== null && !Buffer.isBuffer(body) && !(body instanceof Uint8Array) && typeof body !== 'string') { body = JSON.stringify(body); if (!Object.keys(headers).some(key => key.toLowerCase() === 'content-type')) headers['content-type'] = 'application/json'; }
+    if (body !== undefined && body !== null && !Object.keys(headers).some(key => ['content-length', 'transfer-encoding'].includes(key.toLowerCase()))) headers['content-length'] = typeof body === 'string' ? Buffer.byteLength(body) : body.byteLength;
     const retries = options.retries ?? this.retries, timeout = options.timeout ?? this.timeout;
     if (!Number.isSafeInteger(retries) || retries < 0 || !Number.isSafeInteger(timeout) || timeout <= 0) throw new TypeError('Retries and timeout must be valid integers');
     if (options.retryUnsafe && (typeof options.idempotencyKey !== 'string' || !options.idempotencyKey)) throw new TypeError('retryUnsafe requires an idempotencyKey and server-side deduplication');

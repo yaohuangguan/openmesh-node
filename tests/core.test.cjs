@@ -17,7 +17,7 @@ test('static, parameters, wildcard, backtracking and strict trailing slashes', a
   const app = openmesh().get('/users/me', () => 'static').get('/users/:id', ctx => ctx.params.id).get('/users/new/other', () => 'other').get('/users/:id/profile', ctx => ctx.params.id).get('/files/*', ctx => ctx.params['*']);
   const url = await serve(t, app);
   assert.equal((await request(url, '/users/me')).text, 'static'); assert.equal((await request(url, '/users/new/profile')).text, 'new');
-  assert.equal((await request(url, '/users/%E4%B8%AD%E6%96%87')).text, '中文'); assert.equal((await request(url, '/users/%ZZ')).status, 400);
+  assert.equal((await request(url, '/users/%F0%9F%8C%90')).text, '🌐'); assert.equal((await request(url, '/users/%ZZ')).status, 400);
   assert.equal((await request(url, '/files/a/b')).text, 'a/b'); assert.equal((await request(url, '/users/me/')).status, 404);
 });
 test('HEAD fallback, 404, 405 and bodyless statuses', async t => {

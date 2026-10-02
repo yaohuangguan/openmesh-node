@@ -1,0 +1,26 @@
+name: Publish npm
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'yaohuangguan/openmesh-node' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: npm install --global npm@11.15.0 --ignore-scripts
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: npm run test:types
+      - run: npm run demo:services
+      - run: npm pack --dry-run
+      - run: npm publish --access public

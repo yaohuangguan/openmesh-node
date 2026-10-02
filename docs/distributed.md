@@ -1,6 +1,6 @@
 # Distributed services and HTTP peers
 
-`openmesh-node/mesh` 是独立节点客户端。它适用于已知 HTTP/HTTPS 节点之间的调用、微服务网关和自定义注册中心；原生 HTTP 服务端无需加载这个模块。
+`openmesh-node/mesh` is an independent peer client for known HTTP/HTTPS nodes and service gateways. The HTTP server does not load it unless requested.
 
 ## Selection and failure behavior
 
@@ -82,6 +82,6 @@ const pool = new PeerPool({
 });
 ```
 
-The pool enforces selection, retries, circuits and caller-visible deadlines around the adapter. The adapter must respect cancellation to release its resources and enforce `maxResponseBytes`. Registry, DNS-SRV, libp2p and message transports can be implemented behind these interfaces; no such adapter is bundled yet. Peer URLs currently require HTTP(S) identifiers even when using a custom transport.
+The pool enforces selection, retries, circuits and caller-visible deadlines around the adapter. The adapter must respect cancellation to release its resources and enforce `maxResponseBytes`. The bundled [control-plane module](services.md) provides registration and discovery. External registries, DNS-SRV, libp2p and message transports can be implemented behind these interfaces. Peer URLs currently require HTTP(S) identifiers even when using a custom transport.
 
-P2P here means communication between known addressable HTTP nodes. Automatic peer discovery, NAT traversal, DHT, gossip, consensus, durable queues, authentication, and full OpenTelemetry exporters are separate concerns and are not implemented by 0.1.
+P2P here means communication between known addressable HTTP nodes. Registry-backed discovery is available in 0.2. The peer transport itself provides no NAT traversal, DHT, gossip, consensus, durable queues, application authentication, or full OpenTelemetry exporter.

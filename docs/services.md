@@ -1,0 +1,111 @@
+# Microservice registration, discovery, and configuration
+
+Import these optional APIs from `openmesh-node/services`. They use only Node built-ins and the existing peer client. They stay outside the native HTTP request path.
+
+## Control plane
+
+```js
+import openmesh from 'openmesh-node';
+import { controlPlane } from 'openmesh-node/services';
+const app = openmesh();
+app.register(controlPlane({ token: process.env.OPENMESH_TOKEN }));
+await app.listen({ port: 4000 });
+```
+
+Set `OPENMESH_TOKEN` to 16..1024 printable ASCII characters without spaces. Clients include it as a Bearer token. The default prefix is `/_mesh`; registration, discovery, and configuration APIs all require authentication. Place a remotely accessible control plane behind HTTPS and use an explicitly advertised address. Tokens are not included in discovery responses or logs.
+
+| Method | Path below `/_mesh` | Payload / result |
+| --- | --- | --- |
+| POST | `/services/:service/instances/:id` | `{ url, ttl, metadata }` → lease, 201 |
+| PUT | `/services/:service/instances/:id/lease` | `{ leaseId }` → renewed lease |
+| DELETE | `/services/:service/instances/:id` | `{ leaseId }` → 204 |
+| GET | `/services/:service?cursor=last-id` | `{ instances, nextCursor }`, up to 100 records, without lease secrets |
+| GET | `/config/:namespace` | `{ namespace, epoch, revision, values }` |
+| PUT | `/config/:namespace` | `{ values, expectedEpoch, expectedRevision }` → snapshot |
+
+Names must match `[A-Za-z0-9][A-Za-z0-9._-]{0,127}`. Instance URLs require HTTP(S), with no embedded credentials, query, or fragment. TTL is 1 second to 1 hour, default 30 seconds. Metadata is limited to 8 KiB. Configuration values must be JSON objects and are limited to 256 KiB per namespace. Defaults allow 10,000 instances and 1,000 namespaces. For alternate limits pass `registry: new ServiceRegistry(options)` and `config: new ConfigStore(options)`.
+
+Registrations expire according to the registry's clock and are swept periodically and on access. Duplicate active instance IDs return 409. Renew/remove operations require the current lease ID: an old process cannot remove a replacement registration. Discovery includes unexpired registrations; a valid lease does not establish that every application route is healthy.
+
+## Client and automatic registration
+
+```js
+import { ControlClient, serviceRegistration } from 'openmesh-node/services';
+const client = new ControlClient({
+  url: 'http://127.0.0.1:4000/_mesh', token: process.env.OPENMESH_TOKEN,
+  timeout: 2000
+});
+app.onClose(() => client.close());
+app.register(serviceRegistration({
+  client, service: 'users', id: 'users-a', ttl: 30000,
+  url: address => 'http://127.0.0.1:' + address.port,
+  onError: error => console.error('Registration:', error.message)
+}));
+```
+
+The plugin uses `onListen` to register the bound address, then awaits acknowledgement before `listen()` resolves. A failed initial registration closes the bound listener and runs cleanup hooks. The server is already bound while hooks run: use readiness checks to gate traffic until `app.registration?.healthy` is true. This lifecycle works with `app.listen()`; an externally owned `callback()` server must register itself manually after binding.
+
+Choose a URL reachable by peers, especially in containers. The framework does not infer external proxy ports, container IPs or public addresses. Register shutdown cleanup before startup. The plugin creates `app.registration` and removes its own lease during shutdown; close the provided client separately as shown.
+
+Manual registration:
+
+```js
+const lease = await client.register('users', {
+  id: 'users-a', url: 'http://127.0.0.1:3000', ttl: 30000
+});
+console.log(lease.healthy, lease.record);
+await lease.stop();
+```
+
+Heartbeats run about once per TTL/3, never overlap in normal operation, and have an HTTP deadline. An expired/not-found lease is registered again with a new lease ID. An ownership conflict stops automatic renewal, leaves `healthy` false, and reports the error. Transport errors keep retrying on subsequent heartbeat ticks with the client's circuit cooldown. `lastError` records the latest failure.
+
+Local readiness uses a conservative local TTL deadline, avoiding reliance on synchronized server timestamps. `record.expiresAt` remains the registry's timestamp for inspection. During a control-plane outage, a lease may expire even when the service itself is healthy. If a registration acknowledgement is lost, its orphaned lease disappears by TTL; there is no exactly-once registration guarantee.
+
+`stop()` aborts pending renewal and attempts ownership-safe removal. `client.close()` stops config watchers, removes owned registrations, and destroys transport resources. If removal cannot be completed, it reports an AggregateError and the leases expire normally.
+
+## Discovery and routing
+
+```js
+import { PeerPool } from 'openmesh-node/mesh';
+const pool = new PeerPool({ peers: await client.discover('users') });
+pool.watch(() => client.discover('users'), {
+  interval: 1000,
+  onError: error => console.error('Discovery:', error.message)
+});
+const response = await pool.request('/users/42', { key: '42' });
+```
+
+Discovery feeds the existing routing/retry/circuit logic. `discover()` follows up to 100 pages (10,000 instances) within one client timeout budget; each response is bounded to 2 MiB. Page reads are not an atomic membership snapshot, so concurrent changes converge on subsequent polls. Instance URLs are limited to 2048 characters. Polling introduces an interval of membership staleness. If a refresh fails, the pool keeps its prior membership and data-plane failures can still trigger failover. Filter metadata in the discovery provider when selecting deployment versions or regions. Close the pool before closing the control client.
+
+## Live configuration
+
+```js
+const current = await client.getConfig('users');
+await client.setConfig('users', { greeting: 'Hello', cacheSize: 100 }, {
+  expectedEpoch: current.epoch, expectedRevision: current.revision
+});
+const config = await client.watchConfig('users', {
+  interval: 1000,
+  validate(values) {
+    if (typeof values.greeting !== 'string') throw new Error('Invalid greeting');
+    if (!Number.isInteger(values.cacheSize) || values.cacheSize < 0) throw new Error('Invalid cache size');
+  },
+  onUpdate(current, previous) { console.log(previous.revision, current.revision); },
+  onError(error) { console.error('Configuration:', error.message); }
+});
+app.get('/greeting', () => ({ greeting: config.get('greeting') }));
+```
+
+Reads start at revision 0 for an empty namespace. Every write replaces the whole JSON object and increments the revision. Epoch + revision compare-and-swap rejects concurrent stale writes and stale writes across a store restart. The store's epoch changes on restart; it is not an authorization token.
+
+Watchers poll without overlapping, validate the initial snapshot, and validate each changed snapshot before switching a deeply frozen reference. A failed fetch or validation leaves the last accepted state intact and records `lastError`. New store epochs are recognized even when revision numbers match. Validation must be synchronous; `onUpdate` should finish synchronously or manage its own asynchronous side effects. Notification errors do not roll back a snapshot already accepted. `get(key, fallback)` looks up a literal top-level key, not a dotted path.
+
+The initial fetch must succeed. Watchers do not persist a local cache through process restarts. `config.stop()` stops refreshes and ignores pending responses; closing the client stops all its watchers.
+
+## Operational scope
+
+The bundled registry and configuration store are **in-memory, single-process** components. Registrations/configuration are lost on restart. They do not provide replication, leader election, durable transactions, RBAC, audit history, secret encryption, or multi-writer distributed consensus. A shared Bearer token grants full access to this control plane.
+
+For larger deployments, use a durable external registry/configuration system behind the discovery/provider interfaces, or implement an appropriate storage integration with its own consistency guarantees. Do not run independent in-memory replicas behind a load balancer and assume they share state. Nothing here replaces your deployment platform's health checks or traffic policy.
+
+Run `npm run demo:services` for a complete local flow, including live configuration and removing a stopped service from discovery.

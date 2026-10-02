@@ -19,4 +19,5 @@ jobs:
       - run: npm test
       - run: npm run test:types
       - run: npm run demo:cluster
+      - run: npm run demo:services
       - run: npm pack --dry-run

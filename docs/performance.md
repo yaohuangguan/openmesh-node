@@ -1,6 +1,28 @@
-# Performance report — 0.1.0
+# Performance reports
 
-2026-10-02 本机实测，五个场景每个运行三轮。OpenMesh 吞吐量为 Fastify 的 **97.2%–104.1%**；这为当前场景下“接近 Fastify”的目标提供了证据。其他业务负载需要重新测量。
+## Current release — 0.2.0
+
+Measured on 2026-10-02, on the machine described below, with three rounds per workload, 3-second measurements, 1-second warmups, 32 connections, pipelining 1, and one load-generator worker. Versions: OpenMesh 0.2.0 and Fastify 5.12.5. Native Node HTTP paths only; registration, discovery, tracing and bridges are disabled in both baselines.
+
+| Workload | OpenMesh req/s | Fastify req/s | Ratio | OpenMesh / Fastify p99 ms |
+| --- | ---: | ---: | ---: | ---: |
+| Plain text | 14,724 | 15,076 | 97.7% | 2 / 2 |
+| JSON object | 14,566 | 14,561 | 100.0% | 2 / 2 |
+| Route parameter | 13,426 | 14,244 | 94.3% | 3 / 2 |
+| JSON POST body | 12,000 | 12,191 | 98.4% | 3 / 3 |
+| One middleware | 14,102 | 14,271 | 98.8% | 2 / 2 |
+
+All 30 final measured runs had zero request errors, timeouts and non-2xx responses. The final run was isolated from other project tests and packaging. Raw rounds and ranges: [`release-0.2.0.json`](https://github.com/yaohuangguan/openmesh-node/blob/master/benchmarks/results/release-0.2.0.json).
+
+```sh
+node benchmarks/run.cjs --duration=3 --rounds=3 --connections=32 --frameworks=openmesh,fastify --output=results/release-0.2.0.json
+```
+
+These results establish proximity on these workloads, **not a substantial lead**. The [native-engine investigation](native-engine.md) records a separate Go experiment and the 1.5x target. The Go report uses different connection/worker settings and must not be compared directly to this table.
+
+## Historical baseline — 0.1.0
+
+Historical 0.1.0 baseline, measured on 2026-10-02 with three rounds per workload: OpenMesh throughput was **97.2%–104.1%** of Fastify. This established parity on those workloads, not a substantial lead. The current target and [Go experiment](native-engine.md) are separate from this baseline.
 
 ## Median requests/second
 

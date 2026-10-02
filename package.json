@@ -1,6 +1,6 @@
 {
   "name": "openmesh-node",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A small Node.js HTTP framework for connected services, with peer routing and real Express/Fastify bridges.",
   "repository": { "type": "git", "url": "git+https://github.com/yaohuangguan/openmesh-node.git" },
   "homepage": "https://github.com/yaohuangguan/openmesh-node#readme",
@@ -38,6 +38,10 @@
         "types": "./mesh/index.d.ts",
         "default": "./mesh/index.cjs"
       }
+    },
+    "./services": {
+      "import": { "types": "./services/index.d.mts", "default": "./services/index.mjs" },
+      "require": { "types": "./services/index.d.ts", "default": "./services/index.cjs" }
     }
   },
   "files": [
@@ -51,6 +55,9 @@
     "README.en.md",
     "docs",
     "CONTRIBUTING.md",
+    "CHANGELOG.md",
+    "services",
+    "examples",
     "mesh",
     "index.d.mts",
     "index.d.cts"
@@ -61,6 +68,9 @@
   "scripts": {
     "start": "node examples/basic.mjs",
     "demo:cluster": "node examples/cluster.mjs --demo",
+    "demo:services": "node examples/services.mjs --demo",
+    "example:services": "node examples/services.mjs",
+    "example:control": "node examples/control-plane.mjs",
     "example:cluster": "node examples/cluster.mjs",
     "example:ecosystem": "node examples/ecosystem.mjs",
     "test": "node --test tests/*.test.cjs",
@@ -103,6 +113,7 @@
     "service-discovery"
   ],
   "license": "MIT",
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org" },
   "overrides": {
     "hyperid": {
       "uuid": "11.1.1"

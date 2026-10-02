@@ -1,8 +1,14 @@
 import openmesh = require('openmesh-node');
 import plugins = require('openmesh-node/plugins');
 import mesh = require('openmesh-node/mesh');
+import services = require('openmesh-node/services');
 const app = openmesh();
 app.use(plugins.jsonBody());
 app.get('/', (ctx: openmesh.Context) => ({ method: ctx.method }));
 const pool = new mesh.PeerPool();
 pool.close();
+app.register(services.controlPlane({ token: 'example-token-value' }));
+const client = new services.ControlClient({ url: 'http://127.0.0.1:4000/_mesh', token: 'example-token-value' });
+app.register(services.serviceRegistration({ client, service: 'users', id: 'users-a', url: 'http://127.0.0.1:3000' }));
+app.onListen(scope => { const healthy: boolean | undefined = scope.registration?.healthy; void healthy; });
+void client.close();

@@ -1,6 +1,6 @@
 # Native API
 
-核心使用 Node 内置模块。路由与插件在启动前配置；`ready()` 完成插件启动，`listen()` 开始接受请求。
+The core uses Node built-ins. Configure routes and plugins before startup; `ready()` boots plugins and `listen()` binds the HTTP listener.
 
 ## Application
 
@@ -18,6 +18,7 @@ const app = openmesh({ pluginTimeout: 10000, shutdownTimeout: 5000 });
 | `register(plugin, { prefix, …options })` | Scoped startup plugin |
 | `decorate(name, value)` | Add a property visible to the scope and descendants |
 | `hasPlugin(name)` | Check named plugins visible in this scope |
+| `onListen((app, address) => …)` | Await startup work after binding; failure closes the listener |
 | `onClose(fn)` | Register a cleanup hook; reverse registration order |
 | `setErrorHandler((error, ctx) => …)` | Scoped error handler |
 | `setNotFoundHandler(ctx => …)` | Application-wide 404 handler |
@@ -28,7 +29,7 @@ const app = openmesh({ pluginTimeout: 10000, shutdownTimeout: 5000 });
 
 `app.server` exposes the owned Node HTTP server after `listen()`. `callback()` is usable with an externally owned server after `await app.ready()`; the external owner must close that server itself. Configuration freezes when boot completes. The `server` factory option supplies Node `http.createServer()` options; listen options are passed to `server.listen()`.
 
-Routes are case-sensitive and trailing slashes are significant. Static routes take precedence over parameters, then wildcards. Parameter values decode when accessed. A terminal wildcard, `/files/*path`, captures the remainder. Regex routes and optional parameters are not supported. Duplicate method/path registrations fail at configuration time.
+Routes are case-sensitive and trailing slashes are significant. Static routes take precedence over parameters, then wildcards. Parameter values decode when accessed. A terminal wildcard, `/files/*`, captures the remainder in `ctx.params['*']`. Regex routes and optional parameters are not supported. Duplicate method/path registrations fail at configuration time.
 
 HEAD falls back to GET with its body suppressed. A matching path with another method returns 405 and `Allow`; unmatched paths return 404. Native routes take precedence over mounted engines. Mounts use the longest matching literal prefix.
 

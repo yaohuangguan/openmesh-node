@@ -1,5 +1,9 @@
 node_modules/
+go-bench
+go-bench.exe
 *.tgz
 .env
+.env.*
+.npmrc
 coverage/
 *.log

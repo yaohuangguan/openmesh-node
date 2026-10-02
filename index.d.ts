@@ -32,6 +32,7 @@ export class OpenMesh {
   register(plugin: Plugin, options?: PluginOptions): this;
   decorate(name: string, value: unknown): this; hasPlugin(name: string): boolean;
   onClose(hook: (app: OpenMesh) => void | Promise<void>): this;
+  onListen(hook: (app: OpenMesh, address: AddressInfo | string | null) => void | Promise<void>): this;
   setErrorHandler(handler: (error: Error, ctx: Context) => unknown | Promise<unknown>): this;
   setNotFoundHandler(handler: Handler): this;
   mount(prefix: string, handler: ExpressMiddleware, options?: { close?: () => void | Promise<void> }): this;

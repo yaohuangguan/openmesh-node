@@ -1,6 +1,6 @@
 # Plugins and ecosystem bridges
 
-OpenMesh 原生插件有独立作用域；Express 中间件通过原始请求/响应接入；Fastify 插件在真实 Fastify 实例中运行。
+Native OpenMesh plugins have independent scopes. Express middleware receives raw Node requests/responses; Fastify plugins run inside a real Fastify instance.
 
 ## Native plugins
 
