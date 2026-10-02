@@ -48,7 +48,7 @@ writeFileSync(path.join(root, 'dist', 'types', 'index.d.mts'), `export * from '.
 import { openmesh } from './index.js';
 export default openmesh;
 `);
-for (const subpath of ['plugins', 'mesh', 'services', 'otel']) {
+for (const subpath of ['plugins', 'mesh', 'services', 'services/testing', 'otel']) {
   writeFileSync(path.join(root, 'dist', 'types', subpath, 'index.d.mts'), `export * from './index.js';\n`);
 }
 

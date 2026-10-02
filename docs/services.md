@@ -167,6 +167,29 @@ New store epochs are recognized even when revision numbers match. Validation mus
 
 The initial fetch must succeed. Watchers do not persist a local cache through process restarts. `config.stop()` stops the stream/poll loop; closing the client stops configuration and service watchers.
 
+## Adapter conformance
+
+Adapter authors can validate Redis, etcd, SQL, or other implementations with the published `openmesh-node/services/testing` harness.
+
+```js
+import {
+  runRegistryAdapterConformance,
+  runConfigAdapterConformance
+} from 'openmesh-node/services/testing';
+
+await runRegistryAdapterConformance({
+  create: () => new RedisRegistryAdapter(redis)
+});
+
+await runConfigAdapterConformance({
+  create: () => new PostgresConfigAdapter(db)
+});
+```
+
+The registry profile checks registration, duplicate ownership rejection, lease renewal, discovery without lease-secret exposure, ownership-safe deregistration, snapshots when present, and subscriptions when present. The configuration profile checks snapshots, compare-and-swap replacement, stale-write rejection, and subscriptions.
+
+For a durable implementation, pass `reopen` as a factory that creates a new adapter instance connected to the same backing store. The harness then verifies that an unexpired registry lease or the latest configuration survives the reopen. This is deliberately separate from the basic adapter contract so process-local development adapters can still be tested honestly.
+
 ## Operational scope
 
 The bundled registry and configuration store are **in-memory, single-process** components. Registrations/configuration are lost on restart. They do not provide replication, leader election, durable transactions, audit history, secret encryption, or multi-writer distributed consensus. The control plane supports scoped Bearer credentials for action/resource authorization, but credential issuance, rotation, revocation distribution, and external identity integration remain deployment responsibilities.

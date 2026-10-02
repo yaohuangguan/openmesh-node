@@ -63,6 +63,16 @@
         "default": "./dist/cjs/otel/index.js"
       }
     },
+    "./services/testing": {
+      "import": {
+        "types": "./dist/types/services/testing/index.d.mts",
+        "default": "./dist/esm/services/testing/index.js"
+      },
+      "require": {
+        "types": "./dist/types/services/testing/index.d.ts",
+        "default": "./dist/cjs/services/testing/index.js"
+      }
+    },
     "./package.json": "./package.json"
   },
   "files": [

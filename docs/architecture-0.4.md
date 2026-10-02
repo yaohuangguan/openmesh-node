@@ -124,7 +124,7 @@ A future `@openmesh/otel` adapter or standalone Go control plane can therefore e
 
 ## Next slices
 
-- durable Redis/etcd/SQL registry and configuration adapter conformance suites;
+- concrete durable Redis/etcd/SQL adapters validated by the shipped conformance harness;
 - tracing/exporter extensions built on the stable event contracts beyond the shipped metrics bridge;
 - streaming idle/deadline policy for very long SSE/LLM connections;
 - external identity/credential rotation integration on top of scoped control-plane credentials;

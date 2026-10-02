@@ -3,6 +3,7 @@ import plugins = require('openmesh-node/plugins');
 import mesh = require('openmesh-node/mesh');
 import services = require('openmesh-node/services');
 import otel = require('openmesh-node/otel');
+import serviceTesting = require('openmesh-node/services/testing');
 const app = openmesh();
 app.use(plugins.jsonBody());
 app.get('/', (ctx: openmesh.Context) => ({ method: ctx.method }));
@@ -33,3 +34,6 @@ const telemetry = otel.createOpenTelemetryObservers({
   }
 });
 telemetry.onAppEvent({ type: 'server.closed', at: Date.now() });
+
+void serviceTesting.runRegistryAdapterConformance({ create: () => new services.ServiceRegistry({ sweepInterval: 0 }) });
+void serviceTesting.runConfigAdapterConformance({ create: () => new services.ConfigStore() });

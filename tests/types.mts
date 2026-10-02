@@ -3,6 +3,7 @@ import { jsonBody, requestContext, health } from 'openmesh-node/plugins';
 import { PeerPool, type PeerPoolEvent, type PeerPoolStats, type PeerSelectionStrategy } from 'openmesh-node/mesh';
 import { ControlClient, controlPlane, serviceRegistration, ConfigStore, ServiceRegistry, type ControlCredential, type ControlPlaneInfo } from 'openmesh-node/services';
 import { createOpenTelemetryObservers, type OpenTelemetryMeter } from 'openmesh-node/otel';
+import { runRegistryAdapterConformance, runConfigAdapterConformance } from 'openmesh-node/services/testing';
 const app = openmesh({ onEvent: (event: AppEvent) => { void event.type; } });
 app.use(jsonBody()).use(requestContext()).register(health());
 app.get('/users/:id', (ctx: Context) => ({ id: ctx.params.id }));
@@ -58,3 +59,6 @@ const telemetryMeter: OpenTelemetryMeter = {
 const telemetryObservers = createOpenTelemetryObservers({ meter: telemetryMeter, attributes: { service: 'users' } });
 telemetryObservers.onAppEvent({ type: 'server.closing', at: Date.now() });
 telemetryObservers.onPeerEvent({ type: 'admission.rejected', at: Date.now(), inflight: 1, queued: 2 });
+
+void runRegistryAdapterConformance({ create: () => new ServiceRegistry({ sweepInterval: 0 }) });
+void runConfigAdapterConformance({ create: () => new ConfigStore() });
