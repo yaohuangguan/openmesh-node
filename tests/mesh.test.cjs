@@ -397,3 +397,73 @@ test('adaptive concurrency uses bounded AIMD feedback without exceeding the hard
     /adaptiveConcurrency/
   );
 });
+
+
+test('caller abort after streaming headers releases admission without poisoning circuit', async () => {
+  const controller = new AbortController();
+  let started = false;
+  const pool = new PeerPool({
+    peers: [peers[0]],
+    maxInflight: 1,
+    maxQueue: 0,
+    streamTransport: async ({ signal }) => {
+      const body = new Readable({ read() {} });
+      signal.addEventListener('abort', () => body.destroy(signal.reason), { once: true });
+      started = true;
+      return { statusCode: 200, headers: {}, body };
+    }
+  });
+
+  const response = await pool.requestStream('/', { signal: controller.signal });
+  assert.equal(started, true);
+  assert.equal(pool.poolStats().inflight, 1);
+  controller.abort(new Error('consumer stopped'));
+  await assert.rejects(response.text(), /consumer stopped/);
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(pool.poolStats().inflight, 0);
+  assert.equal(pool.stats()[0].inflight, 0);
+  assert.equal(pool.stats()[0].failures, 0);
+  assert.equal(pool.stats()[0].circuit, 'closed');
+  pool.close();
+});
+
+test('stream byte limit fails the committed stream and releases admission', async () => {
+  const pool = new PeerPool({
+    peers: [peers[0]],
+    maxInflight: 1,
+    maxQueue: 0,
+    maxResponseBytes: 4
+  });
+  const node = openmesh().get('/', () => Readable.from(['abc', 'def']));
+  const t = { after() {} };
+  const url = await serve(t, node);
+  pool.updatePeers([{ id: 'a', url }]);
+
+  const response = await pool.requestStream('/');
+  await assert.rejects(response.text(), error => error.code === 'RESPONSE_TOO_LARGE');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(pool.poolStats().inflight, 0);
+  assert.equal(pool.stats()[0].failures, 1);
+  pool.close();
+  await node.close();
+});
+
+test('consumer destroy releases streaming admission as cancellation', async () => {
+  const pool = new PeerPool({
+    peers: [peers[0]],
+    maxInflight: 1,
+    maxQueue: 0,
+    streamTransport: async () => ({ statusCode: 200, headers: {}, body: new Readable({ read() {} }) })
+  });
+
+  const response = await pool.requestStream('/');
+  assert.equal(pool.poolStats().inflight, 1);
+  response.body.destroy();
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(pool.poolStats().inflight, 0);
+  assert.equal(pool.stats()[0].failures, 0);
+  assert.equal(pool.stats()[0].inflight, 0);
+  pool.close();
+});

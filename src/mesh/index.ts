@@ -869,6 +869,14 @@ export class PeerPool {
             if (!response.body.readableEnded) finalize('cancelled');
           });
 
+          if (response.body.errored) {
+            finalize(options.signal?.aborted || this._closed ? 'cancelled' : 'failure', response.body.errored);
+          } else if (response.body.readableEnded) {
+            finalize('success');
+          } else if (response.body.destroyed) {
+            finalize('cancelled');
+          }
+
           handedOff = true;
           if (signal.aborted) {
             response.body.destroy(signal.reason instanceof Error ? signal.reason : undefined);
