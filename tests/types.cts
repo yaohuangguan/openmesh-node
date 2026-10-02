@@ -9,7 +9,8 @@ const pool = new mesh.PeerPool({ selection: 'p2c', maxInflight: 64, maxQueue: 12
 const poolLoad: mesh.PeerPoolStats = pool.poolStats();
 void poolLoad.queued;
 pool.close();
-app.register(services.controlPlane({ token: 'example-token-value' }));
+const credential: services.ControlCredential = { token: 'scoped-token-value-1234', scopes: ['services:read'], services: ['users'] };
+app.register(services.controlPlane({ credentials: [credential] }));
 const client = new services.ControlClient({ url: 'http://127.0.0.1:4000/_mesh', token: 'example-token-value' });
 void client.info().then(info => { const version: number = info.version; void version; });
 void client.service('users', { maxInflight: 8, maxQueue: 16 }).then(service => { void service.stats(); service.close(); });

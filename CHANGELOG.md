@@ -9,6 +9,8 @@
 - Add optional bounded adaptive concurrency with latency sampling, additive increase, multiplicative decrease, and `concurrency.changed` events.
 - Add normalized benchmark regression CI against Fastify on the same runner, with throughput and p99 budgets plus uploaded raw reports.
 - Add zero-dependency structured `PeerPool` lifecycle events for pressure, attempts, success, failure, cancellation, and concurrency changes.
+- Add opt-in post-header `idleTimeout` for SSE/LLM peer streams with explicit `STREAM_IDLE_TIMEOUT` failures and correct admission cleanup.
+- Add scoped control-plane credentials with action permissions plus optional service/namespace resource restrictions while preserving the legacy full-access token mode.
 
 ## 0.3.0 (unreleased)
 

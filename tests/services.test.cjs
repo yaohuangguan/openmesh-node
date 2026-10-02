@@ -43,7 +43,8 @@ test('real control-plane HTTP requires authentication and supports registration/
       serviceWatch: true,
       configWatch: true,
       membershipRevision: true,
-      configCAS: true
+      configCAS: true,
+      scopedCredentials: true
     }
   });
   const registration = await client.register('users', { id: 'a', url: url, ttl: 1000 });
@@ -366,4 +367,68 @@ test('managed service pools isolate per-service bulkheads and follow discovery',
     await client.close();
     await admin.close();
   }
+});
+
+
+test('scoped control-plane credentials enforce action and resource boundaries', async t => {
+  const adminToken = 'admin-control-token-1234567890';
+  const discoveryToken = 'discovery-control-token-123456';
+  const registryToken = 'registry-control-token-12345678';
+  const configToken = 'config-control-token-123456789';
+
+  const app = openmesh().register(controlPlane({
+    credentials: [
+      { token: adminToken, scopes: ['meta:read', 'services:read', 'services:write', 'config:read', 'config:write'] },
+      { token: discoveryToken, scopes: ['meta:read', 'services:read'], services: ['users'] },
+      { token: registryToken, scopes: ['services:write'], services: ['users'] },
+      { token: configToken, scopes: ['config:read', 'config:write'], namespaces: ['users'] }
+    ]
+  }));
+  const url = await serve(t, app);
+  const admin = new ControlClient({ url: url + '/_mesh', token: adminToken });
+  const discovery = new ControlClient({ url: url + '/_mesh', token: discoveryToken });
+  const registry = new ControlClient({ url: url + '/_mesh', token: registryToken });
+  const config = new ControlClient({ url: url + '/_mesh', token: configToken });
+  t.after(() => Promise.allSettled([admin.close(), discovery.close(), registry.close(), config.close()]));
+
+  assert.equal((await discovery.info()).capabilities.scopedCredentials, true);
+  const registration = await registry.register('users', { id: 'node-a', url, ttl: 1000 });
+  try {
+    assert.equal((await discovery.discover('users'))[0].id, 'node-a');
+    await assert.rejects(discovery.discover('orders'), error => error.statusCode === 403);
+    await assert.rejects(discovery.register('users', { id: 'forbidden', url }), error => error.statusCode === 403);
+    await assert.rejects(registry.discover('users'), error => error.statusCode === 403);
+    await assert.rejects(registry.register('orders', { id: 'node-b', url }), error => error.statusCode === 403);
+
+    const snapshot = await config.getConfig('users');
+    assert.equal(snapshot.revision, 0);
+    await config.setConfig('users', { enabled: true }, {
+      expectedRevision: snapshot.revision,
+      expectedEpoch: snapshot.epoch
+    });
+    assert.equal((await config.getConfig('users')).values.enabled, true);
+    await assert.rejects(config.getConfig('orders'), error => error.statusCode === 403);
+    await assert.rejects(config.discover('users'), error => error.statusCode === 403);
+
+    assert.equal((await admin.discover('users')).length, 1);
+    assert.equal((await admin.getConfig('users')).values.enabled, true);
+  } finally {
+    await registration.stop();
+  }
+
+  assert.throws(
+    () => controlPlane({ token: adminToken, credentials: [{ token: discoveryToken, scopes: ['services:read'] }] }),
+    /exactly one/
+  );
+  assert.throws(
+    () => controlPlane({ credentials: [{ token: discoveryToken, scopes: [] }] }),
+    /scopes/
+  );
+  assert.throws(
+    () => controlPlane({ credentials: [
+      { token: discoveryToken, scopes: ['services:read'] },
+      { token: discoveryToken, scopes: ['services:read'] }
+    ] }),
+    /Duplicate/
+  );
 });

@@ -85,7 +85,7 @@ app.register(serviceRegistration({
 }));
 ```
 
-Configure before `app.listen()`. Set a token of at least 16 characters. Advertise an address reachable by callers; a container's loopback is usually only reachable inside that container. Registration is awaited before `listen()` resolves, renews in the background, and is removed on shutdown.
+Configure before `app.listen()`. Set a token of at least 16 characters. For production least privilege, `controlPlane({ credentials: [...] })` can restrict tokens to `meta:read`, service read/write, or config read/write scopes and to exact service/namespace names; the simple `token` option remains full access. Advertise an address reachable by callers; a container's loopback is usually only reachable inside that container. Registration is awaited before `listen()` resolves, renews in the background, and is removed on shutdown.
 
 ```js
 const users = await client.service('users', {

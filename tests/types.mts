@@ -1,7 +1,7 @@
 import openmesh, { definePlugin, HttpError, type AppEvent, type Context } from 'openmesh-node';
 import { jsonBody, requestContext, health } from 'openmesh-node/plugins';
 import { PeerPool, type PeerPoolEvent, type PeerPoolStats, type PeerSelectionStrategy } from 'openmesh-node/mesh';
-import { ControlClient, controlPlane, serviceRegistration, ConfigStore, ServiceRegistry, type ControlPlaneInfo } from 'openmesh-node/services';
+import { ControlClient, controlPlane, serviceRegistration, ConfigStore, ServiceRegistry, type ControlCredential, type ControlPlaneInfo } from 'openmesh-node/services';
 const app = openmesh({ onEvent: (event: AppEvent) => { void event.type; } });
 app.use(jsonBody()).use(requestContext()).register(health());
 app.get('/users/:id', (ctx: Context) => ({ id: ctx.params.id }));
@@ -29,7 +29,8 @@ const servicePool = await control.service('users', { maxInflight: 32, maxQueue: 
 void servicePool.poolStats().maxInflight;
 servicePool.close();
 void controlInfo.capabilities.serviceWatch;
-app.register(controlPlane({ token: 'example-token-value' }));
+const scopedCredential: ControlCredential = { token: 'scoped-token-value-1234', scopes: ['services:read'], services: ['users'] };
+app.register(controlPlane({ credentials: [scopedCredential] }));
 app.register(serviceRegistration({ client: control, service: 'users', id: 'users-a', url: address => typeof address === 'object' && address ? 'http://127.0.0.1:' + address.port : 'http://127.0.0.1:3000' }));
 app.onListen(async scope => { const healthy: boolean | undefined = scope.registration?.healthy; void healthy; });
 app.onShutdown(async () => {});

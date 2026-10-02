@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import type { ServerResponse } from 'node:http';
 import { definePlugin } from '../core/app.js';
@@ -39,6 +39,27 @@ export type {
 export const CONTROL_PROTOCOL = 'openmesh-control' as const;
 export const CONTROL_PROTOCOL_VERSION = 1;
 
+export type ControlScope =
+  | 'meta:read'
+  | 'services:read'
+  | 'services:write'
+  | 'config:read'
+  | 'config:write';
+
+export interface ControlCredential {
+  token: string;
+  scopes: readonly ControlScope[];
+  services?: readonly string[];
+  namespaces?: readonly string[];
+}
+
+interface ResolvedControlCredential {
+  digest: Buffer;
+  scopes: ReadonlySet<ControlScope>;
+  services: ReadonlySet<string> | null;
+  namespaces: ReadonlySet<string> | null;
+}
+
 export interface ControlPlaneInfo {
   protocol: typeof CONTROL_PROTOCOL;
   version: number;
@@ -47,6 +68,7 @@ export interface ControlPlaneInfo {
     configWatch: boolean;
     membershipRevision: boolean;
     configCAS: boolean;
+    scopedCredentials?: boolean;
   };
 }
 
@@ -100,6 +122,104 @@ function validateToken(token: unknown): asserts token is string {
   if (typeof token !== 'string' || !/^[\x21-\x7e]{16,1024}$/.test(token)) {
     throw new TypeError('Control-plane token must contain 16..1024 printable ASCII characters');
   }
+}
+
+const CONTROL_CREDENTIAL = Symbol('openmesh.controlCredential');
+
+const CONTROL_SCOPES = new Set<ControlScope>([
+  'meta:read',
+  'services:read',
+  'services:write',
+  'config:read',
+  'config:write'
+]);
+
+function controlResourceSet(values: readonly string[] | undefined, label: string): ReadonlySet<string> | null {
+  if (values === undefined) return null;
+  if (!Array.isArray(values)) throw new TypeError(label + ' must be an array');
+  const result = new Set<string>();
+  for (const value of values) {
+    if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) {
+      throw new TypeError('Invalid ' + label + ' entry');
+    }
+    result.add(value);
+  }
+  return result;
+}
+
+function resolveControlCredentials(
+  token: string | undefined,
+  credentials: readonly ControlCredential[] | undefined
+): ResolvedControlCredential[] {
+  if ((token === undefined) === (credentials === undefined)) {
+    throw new TypeError('Control plane requires exactly one of token or credentials');
+  }
+
+  if (token !== undefined) {
+    validateToken(token);
+    return [{
+      digest: createHash('sha256').update(token).digest(),
+      scopes: CONTROL_SCOPES,
+      services: null,
+      namespaces: null
+    }];
+  }
+
+  if (!Array.isArray(credentials) || !credentials.length) {
+    throw new TypeError('Control-plane credentials must be a nonempty array');
+  }
+
+  const seen = new Set<string>();
+  return credentials.map((credential, index) => {
+    if (!credential || typeof credential !== 'object') throw new TypeError('Invalid control-plane credential at index ' + index);
+    validateToken(credential.token);
+    if (!Array.isArray(credential.scopes) || !credential.scopes.length) {
+      throw new TypeError('Control-plane credential scopes must be a nonempty array');
+    }
+    const scopes = new Set<ControlScope>();
+    for (const scope of credential.scopes) {
+      if (!CONTROL_SCOPES.has(scope)) throw new TypeError('Unknown control-plane scope: ' + scope);
+      scopes.add(scope);
+    }
+    const digest = createHash('sha256').update(credential.token).digest();
+    const key = digest.toString('hex');
+    if (seen.has(key)) throw new TypeError('Duplicate control-plane credential token');
+    seen.add(key);
+    return {
+      digest,
+      scopes,
+      services: controlResourceSet(credential.services, 'services'),
+      namespaces: controlResourceSet(credential.namespaces, 'namespaces')
+    };
+  });
+}
+
+function authenticateControlCredential(
+  supplied: unknown,
+  credentials: readonly ResolvedControlCredential[]
+): ResolvedControlCredential | null {
+  const value = typeof supplied === 'string' && supplied.length <= 4096 && supplied.startsWith('Bearer ')
+    ? supplied.slice(7)
+    : '';
+  const digest = createHash('sha256').update(value).digest();
+  let matched: ResolvedControlCredential | null = null;
+  for (const credential of credentials) {
+    if (timingSafeEqual(digest, credential.digest)) matched = credential;
+  }
+  return matched;
+}
+
+function requireControlScope(
+  ctx: Context,
+  scope: ControlScope,
+  resourceType?: 'service' | 'namespace',
+  resource?: string
+): void {
+  const credential = (ctx.state as Record<PropertyKey, unknown>)[CONTROL_CREDENTIAL] as ResolvedControlCredential | undefined;
+  if (!credential) ctx.throw(401, 'Unauthorized');
+  if (!credential.scopes.has(scope)) ctx.throw(403, 'Forbidden');
+  if (resourceType === 'service' && resource && credential.services && !credential.services.has(resource)) ctx.throw(403, 'Forbidden');
+  if (resourceType === 'namespace' && resource && credential.namespaces && !credential.namespaces.has(resource)) ctx.throw(403, 'Forbidden');
 }
 
 function validateAdapter<T extends object>(value: T, label: string, methods: string[]): T {
@@ -213,13 +333,14 @@ async function streamWatch(
   });
 }
 
-export function controlPlane({ token, registry, config, prefix = '/_mesh' }: {
-  token: string;
+export function controlPlane({ token, credentials, registry, config, prefix = '/_mesh' }: {
+  token?: string;
+  credentials?: readonly ControlCredential[];
   registry?: RegistryAdapterLike;
   config?: ConfigAdapterLike;
   prefix?: string;
 }): ReturnType<typeof definePlugin> {
-  validateToken(token);
+  const access = resolveControlCredentials(token, credentials);
   const ownsRegistry = registry === undefined;
   const ownsConfig = config === undefined;
   const activeRegistry = validateAdapter<RegistryAdapterLike>(
@@ -232,7 +353,6 @@ export function controlPlane({ token, registry, config, prefix = '/_mesh' }: {
     'config adapter',
     ['snapshot', 'replace']
   );
-  const secret = Buffer.from('Bearer ' + token);
   const streams = new Set<ServerResponse>();
 
   return definePlugin(async app => {
@@ -244,26 +364,31 @@ export function controlPlane({ token, registry, config, prefix = '/_mesh' }: {
 
     app.register(async scope => {
       scope.use(async (ctx, next) => {
-        const supplied = ctx.get('authorization');
-        const bytes = typeof supplied === 'string' && supplied.length <= 4096 ? Buffer.from(supplied) : Buffer.alloc(0);
-        if (bytes.length !== secret.length || !timingSafeEqual(bytes, secret)) ctx.throw(401, 'Unauthorized');
+        const credential = authenticateControlCredential(ctx.get('authorization'), access);
+        if (!credential) ctx.throw(401, 'Unauthorized');
+        (ctx.state as Record<PropertyKey, unknown>)[CONTROL_CREDENTIAL] = credential;
         return next();
       });
       scope.use(jsonBody({ limit: 300000 }));
 
-      scope.get('/meta', () => ({
+      scope.get('/meta', ctx => {
+        requireControlScope(ctx, 'meta:read');
+        return ({
         protocol: CONTROL_PROTOCOL,
         version: CONTROL_PROTOCOL_VERSION,
         capabilities: {
           serviceWatch: typeof activeRegistry.subscribe === 'function',
           configWatch: typeof activeConfig.subscribe === 'function',
           membershipRevision: typeof activeRegistry.snapshot === 'function',
-          configCAS: true
+          configCAS: true,
+          scopedCredentials: true
         }
-      } satisfies ControlPlaneInfo));
+      } satisfies ControlPlaneInfo);
+      });
 
       const path = '/services/:service/instances/:id';
       scope.post(path, async ctx => {
+        requireControlScope(ctx, 'services:write', 'service', ctx.params.service!);
         ctx.status = 201;
         return activeRegistry.register(
           ctx.params.service!,
@@ -272,16 +397,19 @@ export function controlPlane({ token, registry, config, prefix = '/_mesh' }: {
         );
       });
       scope.put(path + '/lease', ctx => {
+        requireControlScope(ctx, 'services:write', 'service', ctx.params.service!);
         const body = (ctx.requestBody || {}) as Record<string, unknown>;
         return activeRegistry.renew(ctx.params.service!, ctx.params.id!, String(body.leaseId || ''));
       });
       scope.delete(path, async ctx => {
+        requireControlScope(ctx, 'services:write', 'service', ctx.params.service!);
         const body = (ctx.requestBody || {}) as Record<string, unknown>;
         await activeRegistry.deregister(ctx.params.service!, ctx.params.id!, String(body.leaseId || ''));
         ctx.status = 204;
       });
 
       scope.get('/services/:service', async ctx => {
+        requireControlScope(ctx, 'services:read', 'service', ctx.params.service!);
         const cursorValue = ctx.query.cursor;
         const cursor = Array.isArray(cursorValue) ? cursorValue[0] : cursorValue;
         if (cursor !== undefined) name(cursor);
@@ -298,6 +426,7 @@ export function controlPlane({ token, registry, config, prefix = '/_mesh' }: {
 
       scope.get('/watch/services/:service', ctx => {
         name(ctx.params.service!);
+        requireControlScope(ctx, 'services:read', 'service', ctx.params.service!);
         return streamWatch(
           ctx,
           'services',
@@ -309,8 +438,12 @@ export function controlPlane({ token, registry, config, prefix = '/_mesh' }: {
         );
       });
 
-      scope.get('/config/:namespace', ctx => activeConfig.snapshot(ctx.params.namespace!));
+      scope.get('/config/:namespace', ctx => {
+        requireControlScope(ctx, 'config:read', 'namespace', ctx.params.namespace!);
+        return activeConfig.snapshot(ctx.params.namespace!);
+      });
       scope.put('/config/:namespace', ctx => {
+        requireControlScope(ctx, 'config:write', 'namespace', ctx.params.namespace!);
         const body = (ctx.requestBody || {}) as Record<string, unknown>;
         return activeConfig.replace(
           ctx.params.namespace!,
@@ -321,6 +454,7 @@ export function controlPlane({ token, registry, config, prefix = '/_mesh' }: {
       });
       scope.get('/watch/config/:namespace', ctx => {
         name(ctx.params.namespace!);
+        requireControlScope(ctx, 'config:read', 'namespace', ctx.params.namespace!);
         return streamWatch(
           ctx,
           'config',
