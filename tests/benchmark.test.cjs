@@ -32,3 +32,15 @@ test('benchmark guard rejects material normalized regressions', () => {
   assert.ok(result.failures.some(failure => failure.includes('throughput ratio')));
   assert.ok(result.failures.some(failure => failure.includes('p99 ratio')));
 });
+
+
+test('benchmark guard tolerates sub-millisecond timer quantization', () => {
+  const result = evaluate(report(
+    { plaintext: { rps: 940, p99: 1 }, json: { rps: 950, p99: 0 } },
+    { plaintext: { rps: 1000, p99: 0 }, json: { rps: 1000, p99: 0 } }
+  ), { minRatio: 0.82, minGeomean: 0.88, maxP99Ratio: 3 });
+
+  assert.equal(result.passed, true);
+  assert.equal(result.scenarios[0].p99Ratio, 1);
+  assert.equal(result.scenarios[1].p99Ratio, 1);
+});

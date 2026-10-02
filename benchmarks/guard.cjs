@@ -27,7 +27,9 @@ function evaluate(report, options = {}) {
     }
 
     const ratio = current.medianRps / baseline.medianRps;
-    const p99Ratio = current.medianP99Ms / Math.max(0.1, baseline.medianP99Ms);
+    const p99ResolutionMs = 1;
+    const p99Ratio = Math.max(p99ResolutionMs, current.medianP99Ms) /
+      Math.max(p99ResolutionMs, baseline.medianP99Ms);
     const row = {
       scenario: current.scenario,
       openmeshRps: current.medianRps,
