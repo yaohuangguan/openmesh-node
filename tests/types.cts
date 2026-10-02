@@ -12,6 +12,7 @@ pool.close();
 app.register(services.controlPlane({ token: 'example-token-value' }));
 const client = new services.ControlClient({ url: 'http://127.0.0.1:4000/_mesh', token: 'example-token-value' });
 void client.info().then(info => { const version: number = info.version; void version; });
+void client.service('users', { maxInflight: 8, maxQueue: 16 }).then(service => { void service.stats(); service.close(); });
 app.register(services.serviceRegistration({ client, service: 'users', id: 'users-a', url: 'http://127.0.0.1:3000' }));
 app.onListen(scope => { const healthy: boolean | undefined = scope.registration?.healthy; void healthy; });
 app.onShutdown(() => {});

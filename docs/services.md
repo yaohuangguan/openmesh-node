@@ -82,7 +82,28 @@ const response = await pool.request('/users/42', { key: '42' });
 
 Discovery feeds the existing routing/retry/circuit logic. `discover()` follows up to 100 pages (10,000 instances) within one client timeout budget; each response is bounded to 2 MiB. Page reads are not an atomic membership snapshot.
 
-For steady-state discovery, use the push watcher:
+For service-to-service callers, 0.4 adds a managed per-service pool that combines discovery watching with an isolated `PeerPool`:
+
+```js
+const users = await client.service('users', {
+  maxInflight: 64,
+  maxQueue: 128,
+  adaptiveConcurrency: {
+    min: 8,
+    initial: 16,
+    max: 64,
+    targetLatencyMs: 100
+  }
+});
+
+const response = await users.request('/users/42', { key: '42' });
+console.log(response.json(), users.poolStats());
+app.onClose(() => users.close());
+```
+
+Each `ServicePool` owns separate admission, queue, peer circuit, load-selection and adaptive-concurrency state. A saturated `users` pool therefore does not consume the `payments` pool's concurrency budget. Membership changes from the service watcher update the pool automatically. Closing a service pool stops its watcher and aborts its peer requests; it does not close the shared `ControlClient`. Closing the `ControlClient` automatically closes any managed service pools it created.
+
+For steady-state discovery without a managed service pool, use the push watcher directly:
 
 ```js
 const service = await client.watchService('users', {

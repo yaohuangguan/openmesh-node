@@ -14,6 +14,9 @@ const app = openmesh({
     headersTimeout: 10000,
     keepAliveTimeout: 5000,
     maxHeadersCount: 100
+  },
+  onEvent(event) {
+    telemetryQueue.push(event);
   }
 });
 ```
@@ -40,6 +43,8 @@ const app = openmesh({
 | `close({ timeout })` | Stop accepts, drain requests, then destroy stalled sockets and run hooks |
 
 `app.server` exposes the owned Node HTTP server after `listen()`. `callback()` is usable with an externally owned server after `await app.ready()`; the external owner must close that server itself. Configuration freezes when boot completes. The `server` factory option supplies Node `http.createServer()` options; listen options are passed to `server.listen()`. OpenMesh also applies explicit `serverLimits` defaults: 120 s request timeout, 10 s headers timeout, 5 s keep-alive timeout and 100 request headers. Override them when a workload has different requirements.
+
+`onEvent` is an optional zero-dependency observability hook. It receives request start/finish/error and server listening/closing/closed events. Request finish timing follows the real Node response `finish` / `close` lifecycle, so streamed responses are measured until bytes actually complete. Observer exceptions are isolated from request processing; enqueue telemetry work instead of doing blocking I/O in the callback.
 
 Routes are case-sensitive and trailing slashes are significant. Static routes take precedence over parameters, then wildcards. Parameter values decode when accessed. A terminal wildcard, `/files/*`, captures the remainder in `ctx.params['*']`. Regex routes and optional parameters are not supported. Duplicate method/path registrations fail at configuration time.
 
@@ -120,6 +125,6 @@ app.register(health({ ready: async () => database.isConnected() }));
 
 `requestContext` validates or generates a request ID, carries a valid version-00 trace ID forward, and generates a new span ID. It sets response headers and `ctx.state.outboundHeaders` for explicit propagation.
 
-The same request state is also stored with Node `AsyncLocalStorage`, so deep async code can call `currentRequestContext()` without receiving `ctx` as an argument. The store is request-scoped and returns `null` outside a request. This is the context boundary intended for future OpenTelemetry span/export integration; 0.3 still does not create/export telemetry spans or carry `tracestate`/baggage.
+The same request state is also stored with Node `AsyncLocalStorage`, so deep async code can call `currentRequestContext()` without receiving `ctx` as an argument. The store is request-scoped and returns `null` outside a request. This remains the context propagation boundary. OpenMesh 0.4 adds exporter-neutral lifecycle events but still does not create/export OpenTelemetry spans itself or carry `tracestate`/baggage.
 
 `health` registers `/health/live` and `/health/ready`; readiness returns 200 or 503 from the supplied callback. It describes the application's readiness policy, rather than actively probing all peers.

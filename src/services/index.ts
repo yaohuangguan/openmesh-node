@@ -6,6 +6,7 @@ import type { Context } from '../core/context.js';
 import { HttpError } from '../core/context.js';
 import { jsonBody } from '../plugins/index.js';
 import { PeerPool } from '../mesh/index.js';
+import type { Peer, PeerOptions, PeerPoolOptions, PeerPoolStats, PeerResponse, PeerStats, PeerStreamResponse } from '../mesh/index.js';
 import {
   RegistryAdapter,
   ConfigAdapter,
@@ -90,6 +91,10 @@ export interface ServiceWatchOptions {
   onUpdate?: (current: readonly Instance[], previous: readonly Instance[]) => void;
   onError?: (error: Error) => void;
 }
+
+export type ServicePoolOptions = Omit<PeerPoolOptions, 'peers'> & {
+  watch?: ServiceWatchOptions;
+};
 
 function validateToken(token: unknown): asserts token is string {
   if (typeof token !== 'string' || !/^[\x21-\x7e]{16,1024}$/.test(token)) {
@@ -750,6 +755,7 @@ export class ControlClient {
   _registrations = new Set<Registration>();
   _watchers = new Set<ConfigWatcher>();
   _serviceWatchers = new Set<ServiceWatcher>();
+  _servicePools = new Set<ServicePool>();
   private _info: Readonly<ControlPlaneInfo> | null = null;
   private _closing = false;
   private _closePromise: Promise<void> | null = null;
@@ -922,10 +928,22 @@ export class ControlClient {
     return watcher;
   }
 
+  async service(service: string, options: ServicePoolOptions = {}): Promise<ServicePool> {
+    if (this._closing) throw new Error('Control client is closing');
+    const pool = await ServicePool.create(this, service, options);
+    if (this._closing) {
+      pool.close();
+      throw new Error('Control client is closing');
+    }
+    this._servicePools.add(pool);
+    return pool;
+  }
+
   close(): Promise<void> {
     if (!this._closePromise) {
       this._closing = true;
       for (const watcher of this._watchers) watcher.stop();
+      for (const service of [...this._servicePools]) service.close();
       for (const watcher of this._serviceWatchers) watcher.stop();
       this._closePromise = Promise.allSettled([...this._registrations].map(registration => registration.stop())).then(results => {
         this._pool.close();
@@ -934,6 +952,80 @@ export class ControlClient {
       });
     }
     return this._closePromise;
+  }
+}
+
+export class ServicePool {
+  readonly client: ControlClient;
+  readonly service: string;
+  readonly pool: PeerPool;
+  readonly watcher: ServiceWatcher;
+  private _closed = false;
+
+  private constructor(client: ControlClient, service: string, pool: PeerPool, watcher: ServiceWatcher) {
+    this.client = client;
+    this.service = service;
+    this.pool = pool;
+    this.watcher = watcher;
+  }
+
+  static async create(client: ControlClient, service: string, options: ServicePoolOptions = {}): Promise<ServicePool> {
+    if (!(client instanceof ControlClient)) throw new TypeError('ServicePool needs a ControlClient');
+    const serviceName = name(service);
+    const { watch = {}, ...poolOptions } = options;
+    const userUpdate = watch.onUpdate;
+    let pool: PeerPool | null = null;
+
+    const watcher = await client.watchService(serviceName, {
+      ...watch,
+      onUpdate(current, previous) {
+        pool?.updatePeers(current.map(instance => ({ id: instance.id, url: instance.url })));
+        if (userUpdate) userUpdate(current, previous);
+      }
+    });
+
+    try {
+      pool = new PeerPool({
+        ...poolOptions,
+        peers: watcher.instances.map(instance => ({ id: instance.id, url: instance.url }))
+      });
+      return new ServicePool(client, serviceName, pool, watcher);
+    } catch (error) {
+      watcher.stop();
+      throw error;
+    }
+  }
+
+  get peers(): Peer[] {
+    return this.pool.peers;
+  }
+
+  request(path: string, options?: PeerOptions): Promise<PeerResponse> {
+    return this.pool.request(path, options);
+  }
+
+  requestStream(path: string, options?: PeerOptions): Promise<PeerStreamResponse> {
+    return this.pool.requestStream(path, options);
+  }
+
+  json(path: string, options?: PeerOptions): Promise<unknown> {
+    return this.pool.json(path, options);
+  }
+
+  stats(): PeerStats[] {
+    return this.pool.stats();
+  }
+
+  poolStats(): PeerPoolStats {
+    return this.pool.poolStats();
+  }
+
+  close(): void {
+    if (this._closed) return;
+    this._closed = true;
+    this.client._servicePools.delete(this);
+    this.watcher.stop();
+    this.pool.close();
   }
 }
 

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { Readable } = require('node:stream');
 const http = require('node:http');
 const openmesh = require('openmesh-node');
-const { definePlugin } = openmesh;
+const { definePlugin, HttpError } = openmesh;
 const { jsonBody, requestContext, currentRequestContext, health } = require('openmesh-node/plugins');
 const { serve, request } = require('./helpers.cjs');
 
@@ -235,4 +235,44 @@ test('server hardening limits are explicit and configurable', async () => {
     assert.equal(app.server.maxHeadersCount, 64);
   } finally { await app.close(); }
   assert.throws(() => openmesh({ serverLimits: { requestTimeout: 1000, headersTimeout: 2000 } }), /cannot exceed/);
+});
+
+
+test('request and server observer follows real response lifecycle', async () => {
+  const events = [];
+  const app = openmesh({
+    onEvent: event => {
+      events.push(event);
+      if (event.type === 'request.finish') throw new Error('observer failure must stay isolated');
+    }
+  });
+  app.get('/stream', () => Readable.from((async function* () {
+    yield 'a';
+    await new Promise(resolve => setTimeout(resolve, 10));
+    yield 'b';
+  })()));
+  app.get('/fail', () => { throw new HttpError(418, 'teapot', { code: 'TEAPOT' }); });
+
+  const address = await app.listen({ port: 0 });
+  const url = 'http://127.0.0.1:' + address.port;
+  const streamed = await request(url, '/stream');
+  assert.equal(streamed.text, 'ab');
+  const failed = await request(url, '/fail');
+  assert.equal(failed.status, 418);
+  await app.close();
+
+  const start = events.find(event => event.type === 'request.start' && event.path === '/stream');
+  const finish = events.find(event => event.type === 'request.finish' && event.path === '/stream');
+  const error = events.find(event => event.type === 'request.error' && event.path === '/fail');
+  assert.equal(start.route, '/stream');
+  assert.equal(finish.route, '/stream');
+  assert.equal(finish.statusCode, 200);
+  assert.equal(finish.aborted, false);
+  assert.ok(finish.durationMs >= 5);
+  assert.equal(error.code, 'TEAPOT');
+  assert.equal(error.statusCode, 418);
+  assert.deepEqual(
+    events.filter(event => event.type.startsWith('server.')).map(event => event.type),
+    ['server.listening', 'server.closing', 'server.closed']
+  );
 });

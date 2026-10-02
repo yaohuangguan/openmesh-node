@@ -1,8 +1,8 @@
-import openmesh, { definePlugin, HttpError, type Context } from 'openmesh-node';
+import openmesh, { definePlugin, HttpError, type AppEvent, type Context } from 'openmesh-node';
 import { jsonBody, requestContext, health } from 'openmesh-node/plugins';
 import { PeerPool, type PeerPoolEvent, type PeerPoolStats, type PeerSelectionStrategy } from 'openmesh-node/mesh';
 import { ControlClient, controlPlane, serviceRegistration, ConfigStore, ServiceRegistry, type ControlPlaneInfo } from 'openmesh-node/services';
-const app = openmesh();
+const app = openmesh({ onEvent: (event: AppEvent) => { void event.type; } });
 app.use(jsonBody()).use(requestContext()).register(health());
 app.get('/users/:id', (ctx: Context) => ({ id: ctx.params.id }));
 app.register(definePlugin(async scope => { scope.get('/status', () => 'ok'); }, { name: 'example' }));
@@ -13,14 +13,21 @@ const peers = new PeerPool({
   selection,
   maxInflight: 64,
   maxQueue: 128,
-  onEvent: (event: PeerPoolEvent) => { void event.type; }
+  onEvent: (event: PeerPoolEvent) => { void event.type; },
+  adaptiveConcurrency: { min: 4, initial: 8, max: 32, targetLatencyMs: 100 }
 });
 const peerPoolStats: PeerPoolStats = peers.poolStats();
 void peerPoolStats.overloadRejections;
 await peers.json('/users/42', { key: '42', timeout: 1000 });
+const streamed = await peers.requestStream('/users/42');
+const streamedText: string = await streamed.text();
+void streamedText;
 peers.close();
 const control = new ControlClient({ url: 'http://127.0.0.1:4000/_mesh', token: 'example-token-value' });
 const controlInfo: Readonly<ControlPlaneInfo> = await control.info();
+const servicePool = await control.service('users', { maxInflight: 32, maxQueue: 64 });
+void servicePool.poolStats().maxInflight;
+servicePool.close();
 void controlInfo.capabilities.serviceWatch;
 app.register(controlPlane({ token: 'example-token-value' }));
 app.register(serviceRegistration({ client: control, service: 'users', id: 'users-a', url: address => typeof address === 'object' && address ? 'http://127.0.0.1:' + address.port : 'http://127.0.0.1:3000' }));

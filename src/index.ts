@@ -19,6 +19,8 @@ export type {
   SerializerCompiler,
   RouteOptions,
   ServerLimits,
+  AppEvent,
+  AppObserver,
   AppOptions,
   PluginOptions,
   Plugin,

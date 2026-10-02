@@ -35,11 +35,11 @@ pool.close();
 | Circuit | Consecutive failures open one peer; cooldown allows a single half-open probe |
 | Caller cancellation | Propagates through `AbortSignal`; does not count as peer failure |
 | Transport | Keep-alive HTTP/HTTPS; 32 sockets per origin by default, 256 total per protocol agent |
-| Response | Buffered and bounded by `maxResponseBytes`; streaming peer responses are not yet exposed |
+| Response | `request()` buffers up to `maxResponseBytes`; `requestStream()` exposes a bounded Node readable stream |
 
-`pool.rank(key)` always returns the raw rendezvous order and is unaffected by adaptive selection. `pool.stats()` returns per-peer failures, attempts, successes, in-flight requests, latency telemetry, circuit state and probe status. `pool.poolStats()` returns pool-wide admitted/queued counts, configured limits, and overload rejections. Circuit state is local to this process; it is not cluster-wide health consensus. An expired request deadline during an actual peer attempt counts as a failed peer attempt; timing out while still waiting for admission does not touch peer circuit state. The deadline does not encompass asynchronous service discovery, which is run separately.
+`pool.rank(key)` always returns the raw rendezvous order and is unaffected by adaptive selection. `pool.stats()` returns per-peer failures, attempts, successes, in-flight requests, latency telemetry, circuit state and probe status. `pool.poolStats()` returns pool-wide admitted/queued counts, the current concurrency limit, hard limits, adaptive-mode status, and overload rejections. Circuit state is local to this process; it is not cluster-wide health consensus. An expired request deadline during an actual peer attempt counts as a failed peer attempt; timing out while still waiting for admission does not touch peer circuit state. The deadline does not encompass asynchronous service discovery, which is run separately.
 
-The built-in client returns `PeerResponse` with `peer`, `statusCode`, `headers`, `body`, `.text()` and `.json()`. `pool.json()` is a convenience; use `request()` when application handling depends on the HTTP status. `PeerError.code` identifies errors such as `NO_PEERS`, `NO_HEALTHY_PEERS`, `POOL_OVERLOADED`, `REMOTE_HTTP_ERROR`, `DEADLINE_EXCEEDED`, `RESPONSE_TOO_LARGE`, and `POOL_CLOSED`. Native socket errors retain their Node codes.
+The buffered client returns `PeerResponse` with `peer`, `statusCode`, `headers`, `body`, `.text()` and `.json()`. `pool.json()` is a convenience; use `request()` when application handling depends on the HTTP status. `requestStream()` returns `PeerStreamResponse`; its `body` is a Node readable stream and its async `.text()` / `.json()` helpers consume that stream once. `PeerError.code` identifies errors such as `NO_PEERS`, `NO_HEALTHY_PEERS`, `POOL_OVERLOADED`, `REMOTE_HTTP_ERROR`, `DEADLINE_EXCEEDED`, `RESPONSE_TOO_LARGE`, and `POOL_CLOSED`. Native socket errors retain their Node codes.
 
 ## Retry semantics
 
@@ -55,6 +55,45 @@ await pool.request('/jobs', {
 Only enable this when the server persistently deduplicates the operation across all eligible peers. The client adds `idempotency-key`; it provides no deduplication store and no exactly-once guarantee. A failed network response can occur after a remote operation succeeds.
 
 Object bodies are serialized as JSON with a default JSON content type. Strings/Buffers/Uint8Arrays are sent unchanged. Supply only required outbound headers, for example `ctx.state.outboundHeaders`; avoid copying inbound hop-by-hop headers or unrelated authorization credentials wholesale.
+
+## Streaming responses
+
+Use streaming when buffering the entire peer response would be wasteful or incorrect:
+
+```js
+const response = await pool.requestStream('/events', {
+  signal: controller.signal,
+  timeout: 2000
+});
+
+response.body.pipe(destination);
+```
+
+For streaming calls, `timeout` covers admission plus the time required to obtain response headers. Once non-5xx headers are returned to the caller, the response is committed and OpenMesh will not retry another peer if the body later fails. The pool continues to hold admission and peer in-flight accounting until the body ends, fails, is destroyed, or the pool closes.
+
+A consumer that no longer needs the body should call `response.destroy()` or abort the supplied signal. Consumer cancellation does not poison the peer circuit. Transport/body failures after headers do count against peer health.
+
+## Adaptive concurrency
+
+Adaptive concurrency is disabled by default. When enabled, `maxInflight` stays the hard ceiling while the effective `concurrencyLimit` moves inside a configured range:
+
+```js
+const pool = new PeerPool({
+  peers,
+  maxInflight: 128,
+  adaptiveConcurrency: {
+    min: 8,
+    initial: 32,
+    max: 96,
+    targetLatencyMs: 100,
+    decreaseRatio: 0.8,
+    increaseStep: 1,
+    sampleSize: 20
+  }
+});
+```
+
+Successful buffered requests are sampled by latency; streaming calls feed time-to-headers so a healthy long-lived SSE/LLM stream does not look like a multi-minute request latency. Low p90 latency causes additive growth, high latency causes multiplicative reduction, and pre-header failures reduce the limit immediately. `pool.poolStats().concurrencyLimit` exposes the live value and `concurrency.changed` observer events explain changes.
 
 ## Discovery and fan-out
 

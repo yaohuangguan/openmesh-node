@@ -34,6 +34,7 @@ export class Context {
   app: OpenMesh;
   path: string;
   route: ContextRoute | null;
+  routePattern: string | null = null;
   private _values: string[] | null;
   private _params: Record<string, string> | null = null;
   private _query: Record<string, string | string[]> | null = null;

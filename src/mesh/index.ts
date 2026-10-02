@@ -2,6 +2,7 @@ import * as http from 'node:http';
 import * as https from 'node:https';
 import type { IncomingHttpHeaders } from 'node:http';
 import { createHash } from 'node:crypto';
+import { Readable, Transform } from 'node:stream';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE']);
 
@@ -9,13 +10,33 @@ export interface Peer { id: string; url: string; }
 
 export type PeerSelectionStrategy = 'rendezvous' | 'p2c';
 
+export interface AdaptiveConcurrencyOptions {
+  min?: number;
+  initial?: number;
+  max?: number;
+  targetLatencyMs?: number;
+  decreaseRatio?: number;
+  increaseStep?: number;
+  sampleSize?: number;
+}
+
+interface ResolvedAdaptiveConcurrency {
+  min: number;
+  max: number;
+  targetLatencyMs: number;
+  decreaseRatio: number;
+  increaseStep: number;
+  sampleSize: number;
+}
+
 export type PeerPoolEvent =
   | { type: 'admission.queued'; at: number; inflight: number; queued: number }
   | { type: 'admission.rejected'; at: number; inflight: number; queued: number }
   | { type: 'peer.attempt'; at: number; peer: Peer; method: string; path: string; attempt: number }
   | { type: 'peer.success'; at: number; peer: Peer; method: string; path: string; attempt: number; statusCode: number; latencyMs: number }
   | { type: 'peer.failure'; at: number; peer: Peer; method: string; path: string; attempt: number; latencyMs: number; code?: string; statusCode?: number }
-  | { type: 'peer.cancelled'; at: number; peer: Peer; method: string; path: string; attempt: number };
+  | { type: 'peer.cancelled'; at: number; peer: Peer; method: string; path: string; attempt: number }
+  | { type: 'concurrency.changed'; at: number; previous: number; current: number; reason: 'latency' | 'failure'; observedLatencyMs?: number };
 
 export type PeerPoolObserver = (event: PeerPoolEvent) => void;
 
@@ -45,6 +66,12 @@ export interface TransportResponse {
   statusCode: number;
   headers: IncomingHttpHeaders;
   body: Buffer;
+}
+
+export interface StreamTransportResponse {
+  statusCode: number;
+  headers: IncomingHttpHeaders;
+  body: Readable;
 }
 
 export interface PeerStats extends Peer {
@@ -92,9 +119,21 @@ export interface PeerPoolStats {
   overloadRejections: number;
   maxInflight: number;
   maxQueue: number;
+  concurrencyLimit: number;
+  adaptive: boolean;
 }
 
 export type Transport = (request: TransportRequest) => Promise<TransportResponse>;
+export type StreamTransport = (request: TransportRequest) => Promise<StreamTransportResponse>;
+
+interface PreparedPeerRequest {
+  method: string;
+  headers: Record<string, string | number>;
+  body?: string | Buffer | Uint8Array;
+  timeout: number;
+  attempts: number;
+  candidates: Peer[];
+}
 
 export class PeerError extends Error {
   code: string;
@@ -125,6 +164,29 @@ export class PeerResponse {
 
   text(): string { return this.body.toString('utf8'); }
   json(): unknown { return JSON.parse(this.text()); }
+}
+
+export class PeerStreamResponse {
+  peer: Peer;
+  statusCode: number;
+  headers: IncomingHttpHeaders;
+  body: Readable;
+
+  constructor(peer: Peer, response: StreamTransportResponse) {
+    this.peer = peer;
+    this.statusCode = response.statusCode;
+    this.headers = response.headers;
+    this.body = response.body;
+  }
+
+  async text(): Promise<string> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of this.body) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    return Buffer.concat(chunks).toString('utf8');
+  }
+
+  async json(): Promise<unknown> { return JSON.parse(await this.text()); }
+  destroy(error?: Error): void { this.body.destroy(error); }
 }
 
 function validatePeers(peers: Peer[]): Readonly<Peer>[] {
@@ -162,6 +224,23 @@ function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+export interface PeerPoolOptions {
+  peers?: Peer[];
+  timeout?: number;
+  retries?: number;
+  failureThreshold?: number;
+  cooldown?: number;
+  maxResponseBytes?: number;
+  maxSockets?: number;
+  maxInflight?: number;
+  maxQueue?: number;
+  selection?: PeerSelectionStrategy;
+  transport?: Transport;
+  streamTransport?: StreamTransport;
+  onEvent?: PeerPoolObserver;
+  adaptiveConcurrency?: boolean | AdaptiveConcurrencyOptions;
+}
+
 export class PeerPool {
   timeout: number;
   retries: number;
@@ -174,6 +253,7 @@ export class PeerPool {
   private _http: http.Agent;
   private _https: https.Agent;
   private _transport: Transport;
+  private _streamTransport: StreamTransport;
   private _observer: PeerPoolObserver | null;
   private _states = new Map<string, PeerState>();
   private _peers: Readonly<Peer>[] = [];
@@ -182,24 +262,14 @@ export class PeerPool {
   private _admitted = 0;
   private _queue: AdmissionWaiter[] = [];
   private _overloadRejections = 0;
+  private _adaptive: ResolvedAdaptiveConcurrency | null = null;
+  private _concurrencyLimit: number;
+  private _latencySamples: number[] = [];
   private _counter = 0;
   private _closed = false;
   private _watch: DiscoveryWatcher | null = null;
 
-  constructor(options: {
-    peers?: Peer[];
-    timeout?: number;
-    retries?: number;
-    failureThreshold?: number;
-    cooldown?: number;
-    maxResponseBytes?: number;
-    maxSockets?: number;
-    maxInflight?: number;
-    maxQueue?: number;
-    selection?: PeerSelectionStrategy;
-    transport?: Transport;
-    onEvent?: PeerPoolObserver;
-  } = {}) {
+  constructor(options: PeerPoolOptions = {}) {
     this.timeout = options.timeout ?? 2000;
     this.retries = options.retries ?? 1;
     this.failureThreshold = options.failureThreshold ?? 3;
@@ -208,6 +278,7 @@ export class PeerPool {
     this.maxInflight = options.maxInflight ?? 256;
     this.maxQueue = options.maxQueue ?? 1024;
     this.selection = options.selection ?? 'p2c';
+    this._concurrencyLimit = this.maxInflight;
 
     for (const name of ['timeout', 'failureThreshold', 'cooldown', 'maxResponseBytes', 'maxInflight'] as const) {
       if (!Number.isSafeInteger(this[name]) || this[name] <= 0) throw new TypeError(name + ' must be a positive integer');
@@ -216,15 +287,49 @@ export class PeerPool {
     if (!Number.isSafeInteger(this.maxQueue) || this.maxQueue < 0) throw new TypeError('maxQueue must be a nonnegative integer');
     if (!['rendezvous', 'p2c'].includes(this.selection)) throw new TypeError('selection must be rendezvous or p2c');
 
+    if (options.adaptiveConcurrency) {
+      const adaptive = options.adaptiveConcurrency === true ? {} : options.adaptiveConcurrency;
+      const min = adaptive.min ?? 8;
+      const max = adaptive.max ?? this.maxInflight;
+      const initial = adaptive.initial ?? Math.min(max, Math.max(min, 32));
+      const targetLatencyMs = adaptive.targetLatencyMs ?? 100;
+      const decreaseRatio = adaptive.decreaseRatio ?? 0.8;
+      const increaseStep = adaptive.increaseStep ?? 1;
+      const sampleSize = adaptive.sampleSize ?? 20;
+
+      if (
+        !Number.isSafeInteger(min) || min < 1 ||
+        !Number.isSafeInteger(max) || max < min || max > this.maxInflight ||
+        !Number.isSafeInteger(initial) || initial < min || initial > max ||
+        !Number.isSafeInteger(targetLatencyMs) || targetLatencyMs < 1 ||
+        typeof decreaseRatio !== 'number' || !Number.isFinite(decreaseRatio) || decreaseRatio <= 0 || decreaseRatio >= 1 ||
+        !Number.isSafeInteger(increaseStep) || increaseStep < 1 ||
+        !Number.isSafeInteger(sampleSize) || sampleSize < 1
+      ) {
+        throw new TypeError('Invalid adaptiveConcurrency options');
+      }
+
+      this._adaptive = { min, max, targetLatencyMs, decreaseRatio, increaseStep, sampleSize };
+      this._concurrencyLimit = initial;
+    }
+
     const maxSockets = options.maxSockets ?? 32;
     if (!Number.isSafeInteger(maxSockets) || maxSockets <= 0) throw new TypeError('maxSockets must be a positive integer');
     if (options.transport !== undefined && typeof options.transport !== 'function') throw new TypeError('Transport must be a function');
+    if (options.streamTransport !== undefined && typeof options.streamTransport !== 'function') throw new TypeError('streamTransport must be a function');
     if (options.onEvent !== undefined && typeof options.onEvent !== 'function') throw new TypeError('onEvent must be a function');
 
     this._observer = options.onEvent || null;
     this._http = new http.Agent({ keepAlive: true, maxSockets, maxTotalSockets: 256 });
     this._https = new https.Agent({ keepAlive: true, maxSockets, maxTotalSockets: 256 });
     this._transport = options.transport || (request => this._send(request));
+    this._streamTransport = options.streamTransport
+      || (options.transport
+        ? async request => {
+            const response = await this._transport(request);
+            return { ...response, body: Readable.from(response.body) };
+          }
+        : request => this._sendStream(request));
     this.updatePeers(options.peers || []);
   }
 
@@ -328,7 +433,9 @@ export class PeerPool {
       queued: this._queue.length,
       overloadRejections: this._overloadRejections,
       maxInflight: this.maxInflight,
-      maxQueue: this.maxQueue
+      maxQueue: this.maxQueue,
+      concurrencyLimit: this._concurrencyLimit,
+      adaptive: this._adaptive !== null
     };
   }
 
@@ -337,25 +444,81 @@ export class PeerPool {
     try { this._observer(event); } catch {}
   }
 
-  private _releaseAdmission(): void {
-    while (this._queue.length) {
+  private _drainAdmission(): void {
+    while (this._admitted < this._concurrencyLimit && this._queue.length) {
       const waiter = this._queue.shift()!;
       waiter.signal.removeEventListener('abort', waiter.abort);
       if (waiter.signal.aborted) {
         waiter.reject(waiter.signal.reason);
         continue;
       }
+      this._admitted++;
       waiter.resolve(() => this._releaseAdmission());
+    }
+  }
+
+  private _releaseAdmission(): void {
+    this._admitted = Math.max(0, this._admitted - 1);
+    this._drainAdmission();
+  }
+
+  private _setConcurrencyLimit(next: number, reason: 'latency' | 'failure', observedLatencyMs?: number): void {
+    if (!this._adaptive) return;
+    next = Math.max(this._adaptive.min, Math.min(this._adaptive.max, next));
+    if (next === this._concurrencyLimit) return;
+    const previous = this._concurrencyLimit;
+    this._concurrencyLimit = next;
+    this._emit({
+      type: 'concurrency.changed',
+      at: Date.now(),
+      previous,
+      current: next,
+      reason,
+      ...(observedLatencyMs !== undefined ? { observedLatencyMs } : {})
+    });
+    this._drainAdmission();
+  }
+
+  private _concurrencyFeedback(latencyMs: number, failed: boolean): void {
+    const adaptive = this._adaptive;
+    if (!adaptive) return;
+
+    if (failed) {
+      this._latencySamples.length = 0;
+      this._setConcurrencyLimit(
+        Math.max(adaptive.min, Math.floor(this._concurrencyLimit * adaptive.decreaseRatio)),
+        'failure',
+        latencyMs
+      );
       return;
     }
-    this._admitted = Math.max(0, this._admitted - 1);
+
+    this._latencySamples.push(latencyMs);
+    if (this._latencySamples.length < adaptive.sampleSize) return;
+
+    const sorted = this._latencySamples.splice(0).sort((a, b) => a - b);
+    const index = Math.max(0, Math.ceil(sorted.length * 0.9) - 1);
+    const p90 = sorted[index]!;
+    if (p90 > adaptive.targetLatencyMs * 1.2) {
+      this._setConcurrencyLimit(
+        Math.max(adaptive.min, Math.floor(this._concurrencyLimit * adaptive.decreaseRatio)),
+        'latency',
+        p90
+      );
+    } else if (p90 <= adaptive.targetLatencyMs) {
+      this._setConcurrencyLimit(
+        Math.min(adaptive.max, this._concurrencyLimit + adaptive.increaseStep),
+        'latency',
+        p90
+      );
+    }
   }
 
   private _admit(signal: AbortSignal): Promise<() => void> {
     if (this._closed) return Promise.reject(new PeerError('Peer pool is closed', 'POOL_CLOSED'));
     if (signal.aborted) return Promise.reject(signal.reason);
 
-    if (this._admitted < this.maxInflight) {
+    if (this._admitted < this._concurrencyLimit) {
       this._admitted++;
       return Promise.resolve(() => this._releaseAdmission());
     }
@@ -421,6 +584,42 @@ export class PeerPool {
     state.probing = false;
   }
 
+  private _prepare(path: string, options: PeerOptions = {}, onlyPeer: Peer | null = null): PreparedPeerRequest {
+    if (this._closed) throw new PeerError('Peer pool is closed', 'POOL_CLOSED');
+
+    const method = (options.method || 'GET').toUpperCase();
+    const headers: Record<string, string | number> = { ...options.headers };
+    let body: string | Buffer | Uint8Array | undefined;
+    if (options.body !== undefined && options.body !== null) {
+      if (Buffer.isBuffer(options.body) || options.body instanceof Uint8Array || typeof options.body === 'string') {
+        body = options.body;
+      } else {
+        body = JSON.stringify(options.body);
+        if (!Object.keys(headers).some(key => key.toLowerCase() === 'content-type')) headers['content-type'] = 'application/json';
+      }
+    }
+    if (body !== undefined && !Object.keys(headers).some(key => ['content-length', 'transfer-encoding'].includes(key.toLowerCase()))) {
+      headers['content-length'] = typeof body === 'string' ? Buffer.byteLength(body) : body.byteLength;
+    }
+
+    const retries = options.retries ?? this.retries;
+    const timeout = options.timeout ?? this.timeout;
+    if (!Number.isSafeInteger(retries) || retries < 0 || !Number.isSafeInteger(timeout) || timeout <= 0) {
+      throw new TypeError('Retries and timeout must be valid integers');
+    }
+    if (options.retryUnsafe && (typeof options.idempotencyKey !== 'string' || !options.idempotencyKey)) {
+      throw new TypeError('retryUnsafe requires an idempotencyKey and server-side deduplication');
+    }
+    if (options.idempotencyKey) headers['idempotency-key'] = options.idempotencyKey;
+
+    const attempts = SAFE_METHODS.has(method) || options.retryUnsafe ? retries + 1 : 1;
+    const candidates = onlyPeer ? [onlyPeer] : this._candidates(options.key);
+    if (!candidates.length) throw new PeerError('No peers available', 'NO_PEERS');
+    for (const peer of candidates) targetURL(peer, path);
+
+    return { method, headers, body, timeout, attempts, candidates };
+  }
+
   private _send({ url, method, headers, body, signal, maxResponseBytes }: TransportRequest): Promise<TransportResponse> {
     return new Promise((resolve, reject) => {
       const secure = url.protocol === 'https:';
@@ -455,42 +654,59 @@ export class PeerPool {
     });
   }
 
+  private _sendStream({ url, method, headers, body, signal, maxResponseBytes }: TransportRequest): Promise<StreamTransportResponse> {
+    return new Promise((resolve, reject) => {
+      const secure = url.protocol === 'https:';
+      const req = (secure ? https : http).request(url, {
+        method,
+        headers,
+        signal,
+        agent: secure ? this._https : this._http
+      }, res => {
+        let size = 0;
+        const limiter = new Transform({
+          transform(chunk: Buffer | string, _encoding, callback) {
+            const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            size += bytes.length;
+            if (size > maxResponseBytes) {
+              callback(new PeerError('Peer response exceeds size limit', 'RESPONSE_TOO_LARGE'));
+              return;
+            }
+            callback(null, bytes);
+          }
+        });
+
+        const abort = (): void => {
+          const reason = signal.reason instanceof Error
+            ? signal.reason
+            : new PeerError('Peer stream aborted', 'STREAM_ABORTED');
+          res.destroy(reason);
+          limiter.destroy(reason);
+        };
+        const cleanup = (): void => signal.removeEventListener('abort', abort);
+        signal.addEventListener('abort', abort, { once: true });
+        limiter.once('close', () => {
+          cleanup();
+          if (!res.complete) res.destroy();
+        });
+        limiter.on('error', () => res.destroy());
+        res.once('error', error => limiter.destroy(error));
+        res.once('aborted', () => limiter.destroy(new PeerError('Peer response aborted', 'RESPONSE_ABORTED')));
+        res.pipe(limiter);
+
+        resolve({ statusCode: res.statusCode ?? 0, headers: res.headers, body: limiter });
+      });
+      req.once('error', reject);
+      req.end(body);
+    });
+  }
+
   request(path: string, options: PeerOptions = {}): Promise<PeerResponse> {
     return this._request(path, options);
   }
 
   private async _request(path: string, options: PeerOptions = {}, onlyPeer: Peer | null = null): Promise<PeerResponse> {
-    if (this._closed) throw new PeerError('Peer pool is closed', 'POOL_CLOSED');
-
-    const method = (options.method || 'GET').toUpperCase();
-    const headers: Record<string, string | number> = { ...options.headers };
-    let body: string | Buffer | Uint8Array | undefined;
-    if (options.body !== undefined && options.body !== null) {
-      if (Buffer.isBuffer(options.body) || options.body instanceof Uint8Array || typeof options.body === 'string') {
-        body = options.body;
-      } else {
-        body = JSON.stringify(options.body);
-        if (!Object.keys(headers).some(key => key.toLowerCase() === 'content-type')) headers['content-type'] = 'application/json';
-      }
-    }
-    if (body !== undefined && !Object.keys(headers).some(key => ['content-length', 'transfer-encoding'].includes(key.toLowerCase()))) {
-      headers['content-length'] = typeof body === 'string' ? Buffer.byteLength(body) : body.byteLength;
-    }
-
-    const retries = options.retries ?? this.retries;
-    const timeout = options.timeout ?? this.timeout;
-    if (!Number.isSafeInteger(retries) || retries < 0 || !Number.isSafeInteger(timeout) || timeout <= 0) {
-      throw new TypeError('Retries and timeout must be valid integers');
-    }
-    if (options.retryUnsafe && (typeof options.idempotencyKey !== 'string' || !options.idempotencyKey)) {
-      throw new TypeError('retryUnsafe requires an idempotencyKey and server-side deduplication');
-    }
-    if (options.idempotencyKey) headers['idempotency-key'] = options.idempotencyKey;
-
-    const attempts = SAFE_METHODS.has(method) || options.retryUnsafe ? retries + 1 : 1;
-    const candidates = onlyPeer ? [onlyPeer] : this._candidates(options.key);
-    if (!candidates.length) throw new PeerError('No peers available', 'NO_PEERS');
-    for (const peer of candidates) targetURL(peer, path);
+    const { method, headers, body, timeout, attempts, candidates } = this._prepare(path, options, onlyPeer);
 
     const controller = new AbortController();
     this._active.add(controller);
@@ -521,6 +737,7 @@ export class PeerPool {
           }
           const latencyMs = performance.now() - started;
           this._success(state, latencyMs);
+          this._concurrencyFeedback(latencyMs, false);
           this._emit({ type: 'peer.success', at: Date.now(), peer: { ...peer }, method, path, attempt, statusCode: response.statusCode, latencyMs });
           return new PeerResponse(peer, response);
         } catch (error) {
@@ -531,6 +748,7 @@ export class PeerPool {
           }
           const latencyMs = performance.now() - started;
           this._failure(state, latencyMs);
+          this._concurrencyFeedback(latencyMs, true);
           const peerError = error instanceof PeerError ? error : null;
           this._emit({
             type: 'peer.failure',
@@ -553,6 +771,144 @@ export class PeerPool {
       releaseAdmission?.();
       clearTimeout(timer);
       this._active.delete(controller);
+    }
+  }
+
+  requestStream(path: string, options: PeerOptions = {}): Promise<PeerStreamResponse> {
+    return this._requestStream(path, options);
+  }
+
+  private async _requestStream(path: string, options: PeerOptions = {}, onlyPeer: Peer | null = null): Promise<PeerStreamResponse> {
+    const { method, headers, body, timeout, attempts, candidates } = this._prepare(path, options, onlyPeer);
+    const controller = new AbortController();
+    this._active.add(controller);
+    const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+    const timer = setTimeout(
+      () => controller.abort(new PeerError('Peer response headers deadline exceeded', 'DEADLINE_EXCEEDED')),
+      timeout
+    );
+    let releaseAdmission: (() => void) | null = null;
+    let handedOff = false;
+    let count = 0;
+    let lastError: unknown;
+
+    try {
+      if (signal.aborted) throw signal.reason;
+      releaseAdmission = await this._admit(signal);
+      if (signal.aborted) throw signal.reason;
+
+      for (const peer of candidates) {
+        const state = this._claim(peer);
+        if (!state) continue;
+        count++;
+        const attempt = count;
+        const started = performance.now();
+        this._emit({ type: 'peer.attempt', at: Date.now(), peer: { ...peer }, method, path, attempt });
+
+        try {
+          const response = await raceAbort(
+            this._streamTransport({ peer, url: targetURL(peer, path), method, headers, body, signal, maxResponseBytes: this.maxResponseBytes }),
+            signal
+          );
+
+          if (response.statusCode >= 500) {
+            response.body.destroy();
+            throw new PeerError('Peer returned HTTP ' + response.statusCode, 'REMOTE_HTTP_ERROR', { peer, statusCode: response.statusCode });
+          }
+
+          const headerLatencyMs = performance.now() - started;
+          this._concurrencyFeedback(headerLatencyMs, false);
+          clearTimeout(timer);
+          let finalized = false;
+          const finalize = (outcome: 'success' | 'failure' | 'cancelled', error?: unknown): void => {
+            if (finalized) return;
+            finalized = true;
+            const latencyMs = performance.now() - started;
+
+            if (outcome === 'success') {
+              this._success(state, latencyMs);
+              this._emit({
+                type: 'peer.success',
+                at: Date.now(),
+                peer: { ...peer },
+                method,
+                path,
+                attempt,
+                statusCode: response.statusCode,
+                latencyMs
+              });
+            } else if (outcome === 'cancelled') {
+              this._cancel(state);
+              this._emit({ type: 'peer.cancelled', at: Date.now(), peer: { ...peer }, method, path, attempt });
+            } else {
+              this._failure(state, latencyMs);
+              const peerError = error instanceof PeerError ? error : null;
+              this._emit({
+                type: 'peer.failure',
+                at: Date.now(),
+                peer: { ...peer },
+                method,
+                path,
+                attempt,
+                latencyMs,
+                ...(peerError?.code ? { code: peerError.code } : {}),
+                ...(peerError?.statusCode ? { statusCode: peerError.statusCode } : {})
+              });
+            }
+
+            releaseAdmission?.();
+            releaseAdmission = null;
+            this._active.delete(controller);
+          };
+
+          response.body.once('end', () => finalize('success'));
+          response.body.once('error', error => {
+            finalize(options.signal?.aborted || this._closed ? 'cancelled' : 'failure', error);
+          });
+          response.body.once('close', () => {
+            if (!response.body.readableEnded) finalize('cancelled');
+          });
+
+          handedOff = true;
+          if (signal.aborted) {
+            response.body.destroy(signal.reason instanceof Error ? signal.reason : undefined);
+          }
+          return new PeerStreamResponse(peer, response);
+        } catch (error) {
+          if (options.signal?.aborted || this._closed) {
+            this._cancel(state);
+            this._emit({ type: 'peer.cancelled', at: Date.now(), peer: { ...peer }, method, path, attempt });
+            throw signal.reason || error;
+          }
+
+          const latencyMs = performance.now() - started;
+          this._failure(state, latencyMs);
+          this._concurrencyFeedback(latencyMs, true);
+          const peerError = error instanceof PeerError ? error : null;
+          this._emit({
+            type: 'peer.failure',
+            at: Date.now(),
+            peer: { ...peer },
+            method,
+            path,
+            attempt,
+            latencyMs,
+            ...(peerError?.code ? { code: peerError.code } : {}),
+            ...(peerError?.statusCode ? { statusCode: peerError.statusCode } : {})
+          });
+          lastError = error;
+          if (signal.aborted) throw signal.reason;
+          if (count >= attempts) break;
+        }
+      }
+
+      throw lastError || new PeerError('All peer circuits are open', 'NO_HEALTHY_PEERS');
+    } finally {
+      if (!handedOff) {
+        releaseAdmission?.();
+        clearTimeout(timer);
+        this._active.delete(controller);
+      }
     }
   }
 

@@ -64,6 +64,31 @@ npm run bench -- --duration=10 --rounds=5 --connections=64 --output=results/my-m
 
 `npm run bench:smoke` only checks that the harness runs and writes `results/smoke.json`. Its one-second values are unsuitable for performance claims. The full benchmark defaults to `results/local.json`; pass an explicit output to preserve the baseline.
 
+## CI regression budget
+
+OpenMesh 0.4 adds a dedicated Ubuntu / Node 24 benchmark job. It does **not** compare GitHub-hosted runner throughput with the checked-in Windows workstation numbers above. Instead it runs OpenMesh and Fastify in the same job and evaluates normalized ratios from the same machine.
+
+The guard currently checks:
+
+- minimum per-scenario OpenMesh / Fastify median throughput ratio: 0.82;
+- minimum geometric-mean throughput ratio across the benchmark scenarios: 0.88;
+- maximum OpenMesh / Fastify median p99 ratio: 3.0;
+- zero benchmark request errors, timeouts and non-2xx responses through the benchmark harness.
+
+```sh
+node benchmarks/run.cjs \
+  --duration=2 --rounds=3 --connections=32 \
+  --frameworks=openmesh,fastify \
+  --scenarios=plaintext,json,params,body,middleware \
+  --output=results/ci.json
+
+npm run bench:guard -- \
+  --report=benchmarks/results/ci.json \
+  --min-ratio=0.82 --min-geomean=0.88 --max-p99-ratio=3
+```
+
+The job uploads the raw JSON report even when the guard fails. These thresholds are regression budgets, not performance claims: passing means the current request path stayed inside an intentionally broad normalized envelope on that runner. Release claims still require longer dedicated measurements and preserved raw results.
+
 ## Limits
 
 Loopback results may be constrained by the load generator, OS networking and shared CPU. Three-second rounds are short and background load adds noise. This report measures a small route set with tiny payloads. It does not measure TLS, many-route lookup, memory under sustained load, production payloads, Fastify schema-optimized serialization, Express/Fastify bridges, or distributed client overhead.

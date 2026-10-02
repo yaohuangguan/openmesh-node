@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { Readable } = require('node:stream');
 const openmesh = require('openmesh-node');
 const { requestContext } = require('openmesh-node/plugins');
 const { PeerPool, PeerError } = require('openmesh-node/mesh');
@@ -84,7 +85,9 @@ test('bounded admission queues FIFO and rejects overload without starting transp
     queued: 1,
     overloadRejections: 0,
     maxInflight: 1,
-    maxQueue: 1
+    maxQueue: 1,
+    concurrencyLimit: 1,
+    adaptive: false
   });
   await assert.rejects(pool.request('/third'), error => error instanceof PeerError && error.code === 'POOL_OVERLOADED');
   assert.deepEqual(started, ['/first']);
@@ -273,4 +276,124 @@ test('peer pool observer receives safe lifecycle and pressure events', async () 
 
   pool.close();
   assert.throws(() => new PeerPool({ onEvent: 'invalid' }), /onEvent/);
+});
+
+
+test('streaming peer response returns after headers and holds admission until body completion', async t => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const node = openmesh().get('/stream', () => Readable.from((async function* () {
+    yield 'a';
+    await gate;
+    yield 'b';
+  })()));
+  const url = await serve(t, node);
+  const pool = new PeerPool({ peers: [{ id: 'stream', url }], maxInflight: 1, maxQueue: 0 });
+  t.after(() => pool.close());
+
+  const response = await pool.requestStream('/stream');
+  assert.equal(response.statusCode, 200);
+  assert.equal(pool.poolStats().inflight, 1);
+  assert.equal(pool.stats()[0].inflight, 1);
+
+  release();
+  assert.equal(await response.text(), 'ab');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(pool.poolStats().inflight, 0);
+  assert.equal(pool.stats()[0].inflight, 0);
+  assert.equal(pool.stats()[0].successes, 1);
+});
+
+test('streaming retries only before headers are committed', async () => {
+  let calls = 0;
+  const pool = new PeerPool({
+    peers,
+    retries: 1,
+    streamTransport: async () => {
+      calls++;
+      if (calls === 1) return { statusCode: 503, headers: {}, body: Readable.from('unavailable') };
+      return { statusCode: 200, headers: {}, body: Readable.from('ok') };
+    }
+  });
+
+  const response = await pool.requestStream('/');
+  assert.equal(await response.text(), 'ok');
+  assert.equal(calls, 2);
+  pool.close();
+});
+
+test('post-header stream failure is surfaced without replaying the request', async () => {
+  let calls = 0;
+  const pool = new PeerPool({
+    peers: [peers[0]],
+    failureThreshold: 1,
+    retries: 3,
+    streamTransport: async () => {
+      calls++;
+      const body = new Readable({ read() {} });
+      setImmediate(() => {
+        body.push('partial');
+        body.destroy(new PeerError('stream failed', 'STREAM_FAILED'));
+      });
+      return { statusCode: 200, headers: {}, body };
+    }
+  });
+
+  const response = await pool.requestStream('/');
+  await assert.rejects(response.text(), error => error.code === 'STREAM_FAILED');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls, 1);
+  assert.equal(pool.stats()[0].failures, 1);
+  assert.equal(pool.stats()[0].circuit, 'open');
+  pool.close();
+});
+
+
+test('adaptive concurrency uses bounded AIMD feedback without exceeding the hard limit', async () => {
+  let fail = false;
+  const events = [];
+  const pool = new PeerPool({
+    peers: [peers[0]],
+    maxInflight: 4,
+    maxQueue: 4,
+    adaptiveConcurrency: {
+      min: 1,
+      initial: 1,
+      max: 3,
+      targetLatencyMs: 20,
+      decreaseRatio: 0.5,
+      increaseStep: 1,
+      sampleSize: 2
+    },
+    onEvent: event => events.push(event),
+    transport: async () => {
+      if (fail) throw new PeerError('overloaded', 'REMOTE_OVERLOAD');
+      return ok({ ok: true });
+    }
+  });
+
+  assert.equal(pool.poolStats().concurrencyLimit, 1);
+  assert.equal(pool.poolStats().adaptive, true);
+
+  await pool.request('/');
+  await pool.request('/');
+  assert.equal(pool.poolStats().concurrencyLimit, 2);
+
+  await pool.request('/');
+  await pool.request('/');
+  assert.equal(pool.poolStats().concurrencyLimit, 3);
+
+  fail = true;
+  await assert.rejects(pool.request('/'), /overloaded/);
+  assert.equal(pool.poolStats().concurrencyLimit, 1);
+  assert.equal(pool.poolStats().maxInflight, 4);
+  assert.ok(events.some(event => event.type === 'concurrency.changed' && event.current === 2));
+  assert.ok(events.some(event => event.type === 'concurrency.changed' && event.current === 3));
+  assert.ok(events.some(event => event.type === 'concurrency.changed' && event.reason === 'failure' && event.current === 1));
+
+  pool.close();
+  assert.throws(
+    () => new PeerPool({ maxInflight: 2, adaptiveConcurrency: { min: 1, max: 3 } }),
+    /adaptiveConcurrency/
+  );
 });

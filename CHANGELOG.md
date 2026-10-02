@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 (unreleased)
+
+- Add request/server lifecycle observability tied to actual response finish/close events, including streaming responses.
+- Add true streaming peer responses through `requestStream()`; admission and peer in-flight accounting remain held until the stream completes.
+- Define post-header streaming failure semantics: retries are allowed only before response headers are committed.
+- Add managed per-service `ServicePool` instances through `ControlClient.service()`, combining discovery watches with isolated admission, queues, circuits, and peer routing.
+- Add optional bounded adaptive concurrency with latency sampling, additive increase, multiplicative decrease, and `concurrency.changed` events.
+- Add normalized benchmark regression CI against Fastify on the same runner, with throughput and p99 budgets plus uploaded raw reports.
+- Add zero-dependency structured `PeerPool` lifecycle events for pressure, attempts, success, failure, cancellation, and concurrency changes.
+
 ## 0.3.0 (unreleased)
 
 - Add pluggable registry and configuration adapter contracts; control-plane stores may now be asynchronous.
@@ -14,7 +24,6 @@
 - Remove service registrations in the pre-drain shutdown phase so discovery stops sending new work to draining instances.
 - Add default power-of-two-choice load-aware selection for unkeyed peer traffic while preserving rendezvous affinity for keyed requests.
 - Add bounded peer-pool admission with FIFO queueing, deadline-aware waits, overload rejection, and pool-level pressure telemetry.
-- Add zero-dependency structured `PeerPool` lifecycle events for pressure, attempts, success, failure, and cancellation so metrics/tracing exporters can attach without entering the core request path.
 
 ## 0.2.0
 

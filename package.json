@@ -80,6 +80,7 @@
     "test:types": "npm run build && tsc --ignoreConfig --noEmit --strict --types node --module NodeNext --moduleResolution NodeNext --target ES2022 tests/types.mts tests/types.cts",
     "bench": "node benchmarks/run.cjs",
     "bench:smoke": "node benchmarks/run.cjs --duration=1 --rounds=1 --connections=16 --scenarios=plaintext,json --frameworks=openmesh,fastify --output=results/smoke.json",
+    "bench:guard": "node benchmarks/guard.cjs",
     "build": "node scripts/build.cjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "prepare": "npm run build",

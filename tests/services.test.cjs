@@ -324,3 +324,46 @@ test('discovery restarts when membership revision changes between pages', async 
     assert.ok(calls >= 4, 'client should restart pagination after a revision mismatch');
   } finally { await client.close(); }
 });
+
+
+test('managed service pools isolate per-service bulkheads and follow discovery', async t => {
+  const controlURL = await serve(t, openmesh().register(controlPlane({ token })));
+  let releaseUsers;
+  const usersGate = new Promise(resolve => { releaseUsers = resolve; });
+  const usersURL = await serve(t, openmesh().get('/', async () => {
+    await usersGate;
+    return { service: 'users' };
+  }));
+  const paymentsURL = await serve(t, openmesh().get('/', () => ({ service: 'payments' })));
+
+  const admin = new ControlClient({ url: controlURL + '/_mesh', token, timeout: 500 });
+  const client = new ControlClient({ url: controlURL + '/_mesh', token, timeout: 500 });
+  const usersRegistration = await admin.register('users', { id: 'users-a', url: usersURL, ttl: 1000 });
+  const paymentsRegistration = await admin.register('payments', { id: 'payments-a', url: paymentsURL, ttl: 1000 });
+
+  const users = await client.service('users', { maxInflight: 1, maxQueue: 0 });
+  const payments = await client.service('payments', { maxInflight: 2, maxQueue: 0 });
+
+  try {
+    assert.equal(users.poolStats().maxInflight, 1);
+    assert.equal(payments.poolStats().maxInflight, 2);
+
+    const held = users.request('/');
+    await new Promise(resolve => setImmediate(resolve));
+    await assert.rejects(users.request('/'), error => error.code === 'POOL_OVERLOADED');
+
+    assert.deepEqual(await payments.json('/'), { service: 'payments' });
+    assert.equal(payments.poolStats().overloadRejections, 0);
+
+    releaseUsers();
+    assert.deepEqual((await held).json(), { service: 'users' });
+  } finally {
+    releaseUsers();
+    users.close();
+    payments.close();
+    await usersRegistration.stop().catch(() => {});
+    await paymentsRegistration.stop().catch(() => {});
+    await client.close();
+    await admin.close();
+  }
+});
