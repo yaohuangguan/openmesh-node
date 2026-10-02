@@ -4,7 +4,7 @@ const { Readable } = require('node:stream');
 const http = require('node:http');
 const openmesh = require('../index.cjs');
 const { definePlugin } = openmesh;
-const { jsonBody, requestContext, health } = require('../plugins/index.cjs');
+const { jsonBody, requestContext, currentRequestContext, health } = require('../plugins/index.cjs');
 const { serve, request } = require('./helpers.cjs');
 
 test('sync/async handlers, JSON, bytes, streams and empty replies', async t => {
@@ -85,6 +85,29 @@ test('trace context preserves trace id, changes span, and validates request id',
   assert.equal(res.headers['x-request-id'], 'valid-42'); assert.equal(res.json().traceparent.slice(3, 35), trace.slice(3, 35)); assert.notEqual(res.json().traceparent, trace);
   const invalid = await request(url, '/', { headers: { traceparent: 'broken', 'x-request-id': 'bad id' } }); assert.notEqual(invalid.headers['x-request-id'], 'bad id'); assert.match(invalid.json().traceparent, /^00-[a-f0-9]{32}-[a-f0-9]{16}-01$/);
 });
+
+test('request context survives async boundaries without explicit ctx plumbing', async t => {
+  assert.equal(currentRequestContext(), null);
+  const app = openmesh().use(requestContext({ service: 'als-test' })).get('/', async ctx => {
+    await Promise.resolve();
+    const store = currentRequestContext();
+    return {
+      sameState: store === ctx.state,
+      service: store?.service,
+      requestId: store?.requestId,
+      traceparent: store?.traceparent
+    };
+  });
+  const url = await serve(t, app);
+  const response = await fetch(url + '/');
+  const body = await response.json();
+  assert.equal(body.sameState, true);
+  assert.equal(body.service, 'als-test');
+  assert.equal(typeof body.requestId, 'string');
+  assert.match(body.traceparent, /^00-[\da-f]{32}-[\da-f]{16}-[\da-f]{2}$/);
+  assert.equal(currentRequestContext(), null);
+});
+
 test('health endpoints reflect readiness', async t => {
   let ready = false; const app = openmesh().register(health({ ready: () => ready })); const url = await serve(t, app);
   assert.equal((await request(url, '/health/live')).status, 200); assert.equal((await request(url, '/health/ready')).status, 503); ready = true; assert.equal((await request(url, '/health/ready')).status, 200);

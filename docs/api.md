@@ -118,6 +118,8 @@ app.register(health({ ready: async () => database.isConnected() }));
 
 `jsonBody` parses JSON/+json POST, PUT, PATCH and DELETE requests. Invalid JSON returns 400; over-limit bodies return 413. By default it rejects `__proto__` and `constructor` keys to reduce prototype-pollution hazards in downstream code. Set `prototypeAction: 'remove'` to strip those keys or `'ignore'` only when the application intentionally accepts them. It does not parse forms, multipart uploads, compressed payloads, or validate application schemas.
 
-`requestContext` validates or generates a request ID, carries a valid version-00 trace ID forward, and generates a new span ID. It sets response headers and `ctx.state.outboundHeaders` for explicit propagation. It does not create/export telemetry spans or carry `tracestate`/baggage.
+`requestContext` validates or generates a request ID, carries a valid version-00 trace ID forward, and generates a new span ID. It sets response headers and `ctx.state.outboundHeaders` for explicit propagation.
+
+The same request state is also stored with Node `AsyncLocalStorage`, so deep async code can call `currentRequestContext()` without receiving `ctx` as an argument. The store is request-scoped and returns `null` outside a request. This is the context boundary intended for future OpenTelemetry span/export integration; 0.3 still does not create/export telemetry spans or carry `tracestate`/baggage.
 
 `health` registers `/health/live` and `/health/ready`; readiness returns 200 or 503 from the supplied callback. It describes the application's readiness policy, rather than actively probing all peers.
