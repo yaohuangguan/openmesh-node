@@ -22,10 +22,15 @@ function run(command, args, options = {}) {
 }
 
 try {
-  const packed = run(npm, ['pack', '--json', '--ignore-scripts'], { capture: true });
-  const result = JSON.parse(packed);
-  if (!Array.isArray(result) || !result[0]?.filename) throw new Error('npm pack did not return a tarball filename');
-  tarball = path.join(root, result[0].filename);
+  const packed = run(npm, ['pack', '--ignore-scripts', '--silent'], { capture: true });
+  const filename = packed
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .reverse()
+    .find(line => line.endsWith('.tgz'));
+  if (!filename) throw new Error('npm pack did not return a tarball filename');
+  tarball = path.join(root, filename);
 
   writeFileSync(path.join(temp, 'package.json'), JSON.stringify({
     name: 'openmesh-package-smoke',
