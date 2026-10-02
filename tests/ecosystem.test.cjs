@@ -5,7 +5,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const fastifyCors = require('@fastify/cors');
 const fastifyHelmet = require('@fastify/helmet');
-const openmesh = require('../index.cjs');
+const openmesh = require('openmesh-node');
 const { serve, request } = require('./helpers.cjs');
 test('real Express CORS and Helmet run as native middleware', async t => {
   const app = openmesh().useExpress(cors()).useExpress(helmet()).get('/', () => ({ ok: true })); const url = await serve(t, app);

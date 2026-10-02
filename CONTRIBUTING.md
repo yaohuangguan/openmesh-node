@@ -4,12 +4,14 @@
 git clone https://github.com/yaohuangguan/openmesh-node.git
 cd openmesh-node
 npm ci --ignore-scripts
+npm run check
+npm run build
 npm test
 npm run test:types
 npm run demo:cluster
 ```
 
-Use Node.js 22 or newer. Runtime modules use only Node built-ins. Keep optional integrations outside the native request path. New behavior should have a meaningful regression test; network changes should be exercised through real HTTP sockets where possible.
+Use Node.js 22 or newer. Runtime source lives in `src/**/*.ts` and must pass strict TypeScript checks. Generated `dist/` output is never edited by hand. Runtime modules use only Node built-ins. Keep optional integrations outside the native request path. New behavior should have a meaningful regression test; network changes should be exercised through real HTTP sockets where possible.
 
 Before submitting a change to routing or response handling, run `npm run bench` on the same machine before and after. Attach raw reports and the command; compare equivalent workloads. Do not infer production performance from a one-second smoke run.
 

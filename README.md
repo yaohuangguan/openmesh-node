@@ -8,7 +8,7 @@
 
 [API](docs/api.md) · [Microservices](docs/services.md) · [0.3 architecture](docs/architecture-0.3.md) · [Plugins](docs/plugins.md) · [Peer routing](docs/distributed.md) · [Performance](docs/performance.md) · [Go experiment](docs/native-engine.md)
 
-A Node.js HTTP framework for service-to-service communication, with onion middleware, real Express/Fastify bridges, and optional registration, discovery, and configuration modules. The native Node core has **zero runtime dependencies**.
+A TypeScript-first Node.js service runtime with onion middleware, real Express/Fastify bridges, peer routing, registration, discovery, and live configuration. The native Node core has **zero runtime dependencies**; the package is built from one strict TypeScript source tree into ESM, CommonJS, and generated declarations.
 
 Version **0.2.0 is experimental**. The performance goal is a substantial, reproducible lead over Fastify; that goal has **not yet been achieved**. Reports distinguish measurements from targets. This project is independent of Openmesh Network; its package name is `openmesh-node`.
 
@@ -23,7 +23,8 @@ Version **0.2.0 is experimental**. The performance goal is a substantial, reprod
 - Push-based SSE watches for service membership and configuration, with polling compatibility.
 - Discovery that feeds the peer pool; deregistration when services shut down.
 - Immutable live configuration, validation, and epoch/revision compare-and-swap.
-- Request IDs, `traceparent` propagation, health endpoints, ESM/CommonJS, and TypeScript types.
+- Request IDs, `traceparent` propagation, health endpoints, and AsyncLocalStorage request context.
+- TypeScript-first source with generated ESM/CommonJS builds and generated public declarations.
 
 The bundled control plane stores state in one process's memory. Use it for local clusters, integration testing, and early deployments; it does not provide durable or replicated consensus storage. Existing discovery callbacks can integrate an external registry. P2P means known HTTP nodes; NAT traversal and DHT are not implemented.
 

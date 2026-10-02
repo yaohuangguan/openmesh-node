@@ -1,5 +1,5 @@
-import openmesh from '../index.mjs';
-import { controlPlane } from '../services/index.mjs';
+import openmesh from 'openmesh-node';
+import { controlPlane } from 'openmesh-node/services';
 const token = process.env.OPENMESH_TOKEN;
 if (!token) throw new Error('Set OPENMESH_TOKEN to at least 16 characters before starting the control plane');
 const app = openmesh().register(controlPlane({ token }));

@@ -64,27 +64,41 @@ This removes steady-state one-request-per-interval polling from normal 0.3 deplo
 
 Not-found handlers now preserve plugin prefix/scope encapsulation, matching the rest of the plugin model.
 
-## Go boundary
+## TypeScript source and package boundary
 
-Go is not on the per-request JavaScript path in 0.3.
+The repository has one runtime source of truth under `src/**/*.ts`. Strict TypeScript checks run before runtime tests. The build emits CommonJS, ESM, and declarations into `dist/`; generated artifacts are not committed.
 
-The intended future Go role is a standalone control-plane implementation that speaks the same HTTP/watch protocol and implements the same storage semantics:
+```text
+src/**/*.ts
+   |
+   +--> dist/cjs
+   +--> dist/esm
+   +--> dist/types
+```
+
+Tests and benchmarks import the package through its public exports rather than reaching into source files. This makes package-format failures visible before publication and prevents the source implementation and published declarations from drifting apart.
+
+## Runtime language boundary
+
+OpenMesh 0.3 does not require Go or any other native runtime. The production architecture is protocol- and adapter-driven: the Node/TypeScript runtime owns application requests, while a control plane may be implemented independently as long as it preserves the registry, configuration, lease, revision, and watch semantics.
+
+A standalone Go control plane remains an optional experiment because it can be operationally attractive as a small binary with many concurrent watch connections. It is not part of the JavaScript request path, and it will only become a supported implementation if measurements and operational simplicity justify the added language.
 
 ```text
 Node OpenMesh service ----+
-Node OpenMesh service ----+---- Go control plane ---- durable store
+Node OpenMesh service ----+---- control plane ---- durable adapter
 Node OpenMesh service ----+       registry/config/watch
 ```
 
-This avoids a Go -> JavaScript boundary for every application request. Native data-plane routes remain a separate experiment and require independent evidence before becoming part of the runtime.
+Native data-plane routes remain a separate experiment and require independent evidence before becoming part of the runtime.
 
 ## Next slices
 
 The next 0.3 work should build on these boundaries rather than enlarge the core class:
 
-1. production adapters and adapter conformance tests;
-2. durable production adapters and adapter conformance suites;
-3. OpenTelemetry context and exporter integration;
+1. durable production adapters and adapter conformance suites;
+2. OpenTelemetry context and exporter integration;
+3. request-path profiling and regression budgets;
 4. streaming peer responses and richer transport metrics;
 5. optional load-aware peer selection for unkeyed traffic;
 6. hardened server timeout/header/body defaults;

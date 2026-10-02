@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto';
-import openmesh from '../index.mjs';
-import { PeerPool } from '../mesh/index.mjs';
-import { controlPlane, ControlClient, serviceRegistration } from '../services/index.mjs';
-import { health, requestContext } from '../plugins/index.mjs';
+import openmesh from 'openmesh-node';
+import { PeerPool } from 'openmesh-node/mesh';
+import { controlPlane, ControlClient, serviceRegistration } from 'openmesh-node/services';
+import { health, requestContext } from 'openmesh-node/plugins';
 
 const token = process.env.OPENMESH_TOKEN || randomBytes(32).toString('hex');
 const control = openmesh().register(controlPlane({ token }));

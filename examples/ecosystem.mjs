@@ -1,4 +1,4 @@
-import openmesh from '../index.mjs';
+import openmesh from 'openmesh-node';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';

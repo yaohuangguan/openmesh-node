@@ -17,7 +17,7 @@ npm whoami --registry=https://registry.npmjs.org
 npm publish --access public
 ```
 
-Complete npm's interactive browser/2FA challenge when requested. Do not put account tokens, passwords or OTPs into commits or issues. The tarball uses an explicit file allowlist; it contains runtime source, types, examples and documentation, with no native benchmark executable or development dependencies bundled.
+Complete npm's interactive browser/2FA challenge when requested. Do not put account tokens, passwords or OTPs into commits or issues. The tarball uses an explicit file allowlist. `prepare` builds the strict TypeScript source into generated CommonJS, ESM, and declaration outputs under `dist/`; the published package contains those runtime artifacts, examples, and documentation, with no native benchmark executable or development dependencies bundled.
 
 After publishing:
 
