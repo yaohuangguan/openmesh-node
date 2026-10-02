@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="OpenMesh is a strict TypeScript service runtime for Node.js with native HTTP, service discovery, live configuration and resilient peer routing." />
+    <meta name="theme-color" content="#0a0d12" />
+    <title>OpenMesh — Connected Node.js services, without the glue code</title>
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="brand" href="#top" aria-label="OpenMesh home">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" role="img">
+              <circle cx="8" cy="16" r="3.5"></circle>
+              <circle cx="24" cy="8" r="3.5"></circle>
+              <circle cx="24" cy="24" r="3.5"></circle>
+              <path d="M11 15L20.5 9.5M11 17L20.5 22.5M24 11.5V20.5"></path>
+            </svg>
+          </span>
+          <span>OpenMesh</span>
+        </a>
+        <nav class="nav-links" aria-label="Primary navigation">
+          <a href="#architecture">Architecture</a>
+          <a href="#performance">Performance</a>
+          <a href="https://github.com/yaohuangguan/openmesh-node/tree/master/docs">Docs</a>
+          <a href="https://www.npmjs.com/package/openmesh-node">npm</a>
+        </nav>
+        <a class="header-cta" href="https://github.com/yaohuangguan/openmesh-node">GitHub <span aria-hidden="true">↗</span></a>
+      </header>
+
+      <main id="top">
+        <section class="hero section">
+          <div class="hero-copy">
+            <div class="eyebrow"><span class="pulse-dot"></span> Experimental · v0.2 published · 0.3 in development</div>
+            <h1>Node services that <em>know how to find each other.</em></h1>
+            <p class="hero-lede">
+              A strict TypeScript service runtime with native HTTP, service discovery,
+              live configuration and resilient peer routing — with zero runtime dependencies in the core.
+            </p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="#quickstart">Start in 60 seconds</a>
+              <a class="button button-ghost" href="https://github.com/yaohuangguan/openmesh-node">Read the source <span>↗</span></a>
+            </div>
+            <div class="install-line" role="group" aria-label="Install OpenMesh">
+              <code>npm install openmesh-node</code>
+              <button class="copy-button" type="button" data-copy="npm install openmesh-node">Copy</button>
+            </div>
+            <div class="hero-meta">
+              <span>Node.js ≥ 22</span>
+              <span>MIT</span>
+              <span>ESM + CommonJS</span>
+              <span>Strict TypeScript</span>
+            </div>
+          </div>
+
+          <div class="hero-visual" aria-label="OpenMesh service architecture diagram">
+            <div class="visual-label">A connected runtime, not a pile of packages</div>
+            <div class="mesh-stage">
+              <div class="mesh-lines" aria-hidden="true">
+                <span class="line line-a"></span>
+                <span class="line line-b"></span>
+                <span class="line line-c"></span>
+                <span class="line line-d"></span>
+              </div>
+              <div class="node-card service-card service-a">
+                <div class="node-head"><span class="node-dot"></span><strong>users-a</strong></div>
+                <code>:3001</code>
+                <span class="node-status">registered</span>
+              </div>
+              <div class="node-card service-card service-b">
+                <div class="node-head"><span class="node-dot"></span><strong>users-b</strong></div>
+                <code>:3002</code>
+                <span class="node-status">registered</span>
+              </div>
+              <div class="node-card gateway-card">
+                <span class="mini-label">gateway</span>
+                <strong>PeerPool</strong>
+                <small>retry · circuit · deadline</small>
+              </div>
+              <div class="node-card control-card">
+                <span class="mini-label">control plane</span>
+                <strong>registry + config</strong>
+                <small>SSE watch · leases · revisions</small>
+              </div>
+            </div>
+            <div class="visual-foot">
+              <span><i class="legend-dot green"></i> application traffic</span>
+              <span><i class="legend-dot blue"></i> control traffic</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="signal-strip" aria-label="OpenMesh highlights">
+          <div><strong>0</strong><span>core runtime dependencies</span></div>
+          <div><strong>57</strong><span>runtime tests on 0.3 branch</span></div>
+          <div><strong>22 / 24</strong><span>Node versions covered by CI</span></div>
+          <div><strong>94–100%</strong><span>of Fastify throughput in recorded 0.2 workloads</span></div>
+        </section>
+
+        <section class="section intro-grid">
+          <div class="section-kicker">Why OpenMesh</div>
+          <div class="intro-copy">
+            <h2>Fast HTTP is solved. <br />Connected services still are not.</h2>
+            <p>
+              A normal Node service starts simple, then slowly accumulates discovery clients,
+              retry libraries, configuration polling, tracing glue and shutdown edge cases.
+              OpenMesh makes the common service-runtime pieces first-class without replacing Node itself.
+            </p>
+          </div>
+        </section>
+
+        <section class="feature-grid section">
+          <article class="feature feature-wide">
+            <span class="feature-index">01</span>
+            <h3>Native Node HTTP, not a proxy layer</h3>
+            <p>Your request handler stays on the Node.js request path. No Go sidecar. No IPC hop. No framework hidden underneath.</p>
+            <div class="code-mini"><span>router</span><b>→</b><span>middleware</span><b>→</b><span>handler</span><b>→</b><span>response</span></div>
+          </article>
+          <article class="feature">
+            <span class="feature-index">02</span>
+            <h3>Discovery that feeds routing</h3>
+            <p>Register with expiring leases, watch membership changes and route calls across live peers with stable rendezvous hashing.</p>
+          </article>
+          <article class="feature">
+            <span class="feature-index">03</span>
+            <h3>Live config without restart loops</h3>
+            <p>Revisioned configuration, compare-and-swap updates and push-based SSE watches with polling fallback.</p>
+          </article>
+          <article class="feature">
+            <span class="feature-index">04</span>
+            <h3>Failures are part of the API</h3>
+            <p>Deadlines, safe retries, circuit breaking, bounded broadcast and per-peer latency / health telemetry are built in.</p>
+          </article>
+          <article class="feature">
+            <span class="feature-index">05</span>
+            <h3>TypeScript is the source, not decoration</h3>
+            <p>One strict <code>src/**/*.ts</code> tree emits CommonJS, ESM and public declarations. No hand-maintained type mirror.</p>
+          </article>
+        </section>
+
+        <section id="quickstart" class="section quickstart">
+          <div class="section-heading">
+            <span class="section-kicker">60 second start</span>
+            <h2>The small version is still small.</h2>
+            <p>You do not need the control plane, mesh client or ecosystem bridges to use the HTTP runtime.</p>
+          </div>
+          <div class="code-window">
+            <div class="code-window-bar">
+              <div class="window-dots"><i></i><i></i><i></i></div>
+              <span>server.ts</span>
+              <button type="button" class="copy-button compact" data-copy="import openmesh from 'openmesh-node';&#10;import { jsonBody } from 'openmesh-node/plugins';&#10;&#10;const app = openmesh();&#10;app.use(jsonBody());&#10;&#10;app.get('/', () => ({ hello: 'OpenMesh' }));&#10;app.get('/users/:id', ctx => ({ id: ctx.params.id }));&#10;&#10;await app.listen({ port: 3000 });">Copy</button>
+            </div>
+            <pre><code><span class="kw">import</span> openmesh <span class="kw">from</span> <span class="str">'openmesh-node'</span>;
+<span class="kw">import</span> { jsonBody } <span class="kw">from</span> <span class="str">'openmesh-node/plugins'</span>;
+
+<span class="kw">const</span> app = <span class="fn">openmesh</span>();
+app.<span class="fn">use</span>(<span class="fn">jsonBody</span>());
+
+app.<span class="fn">get</span>(<span class="str">'/'</span>, () =&gt; ({ hello: <span class="str">'OpenMesh'</span> }));
+app.<span class="fn">get</span>(<span class="str">'/users/:id'</span>, ctx =&gt; ({ id: ctx.params.id }));
+
+<span class="kw">await</span> app.<span class="fn">listen</span>({ port: <span class="num">3000</span> });</code></pre>
+          </div>
+        </section>
+
+        <section id="architecture" class="section architecture">
+          <div class="section-heading architecture-heading">
+            <span class="section-kicker">Architecture</span>
+            <h2>Use only the layers you need.</h2>
+            <p>The HTTP runtime is independent from the service control plane. OpenMesh does not force a distributed system onto a single service.</p>
+          </div>
+
+          <div class="architecture-stack">
+            <div class="architecture-row">
+              <div class="stack-label">Your app</div>
+              <div class="stack-block primary">handlers + business logic</div>
+            </div>
+            <div class="architecture-row">
+              <div class="stack-label">Runtime</div>
+              <div class="stack-block">router</div>
+              <div class="stack-arrow">→</div>
+              <div class="stack-block">middleware</div>
+              <div class="stack-arrow">→</div>
+              <div class="stack-block">schema</div>
+              <div class="stack-arrow">→</div>
+              <div class="stack-block">response</div>
+            </div>
+            <div class="architecture-row split-row">
+              <div class="stack-label">Optional</div>
+              <div class="stack-group">
+                <div class="stack-block accent">PeerPool</div>
+                <small>selection · retry · circuit · metrics</small>
+              </div>
+              <div class="stack-group">
+                <div class="stack-block accent-blue">ControlClient</div>
+                <small>registration · discovery · config · watch</small>
+              </div>
+            </div>
+            <div class="architecture-row">
+              <div class="stack-label">Storage</div>
+              <div class="stack-block muted">RegistryAdapter</div>
+              <div class="stack-block muted">ConfigAdapter</div>
+              <div class="stack-note">memory defaults · external durable adapters later</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section dependency-section">
+          <div class="dependency-copy">
+            <span class="section-kicker">Fastify relationship</span>
+            <h2>No, OpenMesh does not depend on Fastify.</h2>
+            <p>
+              The native runtime has zero runtime dependencies. Fastify is an <strong>optional peer dependency</strong>
+              used only when you explicitly call the compatibility bridge.
+            </p>
+            <div class="dependency-list">
+              <div><span class="check">✓</span><p><strong>Normal OpenMesh app</strong><br />Fastify is never loaded.</p></div>
+              <div><span class="check">✓</span><p><strong><code>app.fastify(...)</code></strong><br />Uses a real Fastify 5 instance, if you installed it.</p></div>
+              <div><span class="check">✓</span><p><strong>Package core</strong><br />No Express, Fastify, Koa or native addon dependency.</p></div>
+            </div>
+          </div>
+          <div class="dependency-code">
+            <pre><code><span class="comment">// Native path — no Fastify involved</span>
+<span class="kw">const</span> app = <span class="fn">openmesh</span>();
+app.<span class="fn">get</span>(<span class="str">'/health'</span>, () =&gt; ({ ok: <span class="bool">true</span> }));
+
+<span class="comment">// Optional compatibility island</span>
+app.<span class="fn">fastify</span>(<span class="str">'/legacy'</span>, <span class="kw">async</span> host =&gt; {
+  host.<span class="fn">get</span>(<span class="str">'/hello'</span>, <span class="kw">async</span> () =&gt; ({
+    engine: <span class="str">'fastify'</span>
+  }));
+});</code></pre>
+          </div>
+        </section>
+
+        <section id="performance" class="section performance">
+          <div class="section-heading">
+            <span class="section-kicker">Measured, not marketed</span>
+            <h2>Close to Fastify today. Not “faster” by slogan.</h2>
+            <p>Recorded 0.2 results: three rounds, 32 keep-alive connections, Node 24, same machine, same tiny workloads.</p>
+          </div>
+          <div class="benchmark-grid">
+            <div class="benchmark-table">
+              <div class="bench-row bench-head"><span>Workload</span><span>OpenMesh</span><span>Fastify</span><span>Ratio</span></div>
+              <div class="bench-row"><span>Plain text</span><span>14,724</span><span>15,076</span><span>97.7%</span></div>
+              <div class="bench-row"><span>JSON object</span><span>14,566</span><span>14,561</span><span>100.0%</span></div>
+              <div class="bench-row"><span>Route param</span><span>13,426</span><span>14,244</span><span>94.3%</span></div>
+              <div class="bench-row"><span>JSON POST</span><span>12,000</span><span>12,191</span><span>98.4%</span></div>
+              <div class="bench-row"><span>1 middleware</span><span>14,102</span><span>14,271</span><span>98.8%</span></div>
+            </div>
+            <aside class="benchmark-note">
+              <span class="mini-label">The claim</span>
+              <strong>Parity is useful.<br />Honesty is more useful.</strong>
+              <p>These are loopback microbenchmarks, not a production guarantee. OpenMesh's differentiator is the connected service runtime around the request path.</p>
+              <a href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/performance.md">Method + raw results ↗</a>
+            </aside>
+          </div>
+        </section>
+
+        <section class="section service-example">
+          <div class="section-heading">
+            <span class="section-kicker">When one service becomes three</span>
+            <h2>The distributed pieces fit together.</h2>
+          </div>
+          <div class="flow-steps">
+            <div class="flow-step">
+              <span>1</span>
+              <div><strong>Register</strong><p>Instances acquire leases after their listeners bind.</p></div>
+            </div>
+            <div class="flow-connector"></div>
+            <div class="flow-step">
+              <span>2</span>
+              <div><strong>Discover</strong><p>Revision-consistent snapshots feed live peer membership.</p></div>
+            </div>
+            <div class="flow-connector"></div>
+            <div class="flow-step">
+              <span>3</span>
+              <div><strong>Route</strong><p>Calls get stable selection, deadlines, retry policy and circuit state.</p></div>
+            </div>
+            <div class="flow-connector"></div>
+            <div class="flow-step">
+              <span>4</span>
+              <div><strong>Watch</strong><p>SSE pushes membership and config changes without polling loops.</p></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section final-cta">
+          <div>
+            <span class="section-kicker">Open source · experimental</span>
+            <h2>Keep the handler simple.<br />Make the runtime carry more.</h2>
+          </div>
+          <div class="final-actions">
+            <a class="button button-primary" href="https://www.npmjs.com/package/openmesh-node">Install from npm <span>↗</span></a>
+            <a class="button button-ghost" href="https://github.com/yaohuangguan/openmesh-node/tree/master/docs">Read the docs <span>↗</span></a>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <a class="brand footer-brand" href="#top">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32">
+              <circle cx="8" cy="16" r="3.5"></circle><circle cx="24" cy="8" r="3.5"></circle><circle cx="24" cy="24" r="3.5"></circle>
+              <path d="M11 15L20.5 9.5M11 17L20.5 22.5M24 11.5V20.5"></path>
+            </svg>
+          </span>
+          <span>OpenMesh</span>
+        </a>
+        <p>Independent open-source project. Not affiliated with Openmesh Network.</p>
+        <div class="footer-links">
+          <a href="https://github.com/yaohuangguan/openmesh-node">GitHub</a>
+          <a href="https://www.npmjs.com/package/openmesh-node">npm</a>
+          <a href="https://github.com/yaohuangguan/openmesh-node/blob/master/LICENSE">MIT License</a>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>
