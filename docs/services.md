@@ -12,7 +12,7 @@ app.register(controlPlane({ token: process.env.OPENMESH_TOKEN }));
 await app.listen({ port: 4000 });
 ```
 
-Set `OPENMESH_TOKEN` to 16..1024 printable ASCII characters without spaces. Clients include it as a Bearer token. The default prefix is `/_mesh`; registration, discovery, and configuration APIs all require authentication. Place a remotely accessible control plane behind HTTPS and use an explicitly advertised address. Tokens are not included in discovery responses or logs.
+Set `OPENMESH_TOKEN` to 16..1024 printable ASCII characters without spaces. Clients include it as a Bearer token. The legacy `token` option remains an unrestricted credential for simple deployments. For least privilege, use `credentials` instead; each credential declares action scopes and can optionally restrict service or configuration namespace names. The default prefix is `/_mesh`; registration, discovery, and configuration APIs all require authentication. Place a remotely accessible control plane behind HTTPS and use an explicitly advertised address. Tokens are hashed for comparison and are not included in discovery responses or logs.
 
 | Method | Path below `/_mesh` | Payload / result |
 | --- | --- | --- |
@@ -26,7 +26,28 @@ Set `OPENMESH_TOKEN` to 16..1024 printable ASCII characters without spaces. Clie
 | PUT | `/config/:namespace` | `{ values, expectedEpoch, expectedRevision }` → snapshot |
 | GET | `/watch/config/:namespace` | authenticated SSE configuration snapshots |
 
-The control protocol uses the name `openmesh-control` and major version `1`. `await client.info()` validates that protocol version and returns capability flags for service/config streaming watches, membership revisions, and configuration CAS. The handshake is explicit rather than automatic, so ordinary calls do not pay an extra network round trip.
+The control protocol uses the name `openmesh-control` and major version `1`. `await client.info()` validates that protocol version and returns capability flags for service/config streaming watches, membership revisions, configuration CAS, and scoped credentials. The handshake is explicit rather than automatic, so ordinary calls do not pay an extra network round trip.
+
+Scoped credentials use these permissions: `meta:read`, `services:read`, `services:write`, `config:read`, and `config:write`. Omitting `services` or `namespaces` means all resources in that category; supplying a list restricts access to those exact names.
+
+```js
+app.register(controlPlane({
+  credentials: [
+    {
+      token: process.env.OPENMESH_DISCOVERY_TOKEN,
+      scopes: ['meta:read', 'services:read'],
+      services: ['users', 'payments']
+    },
+    {
+      token: process.env.OPENMESH_CONFIG_TOKEN,
+      scopes: ['config:read', 'config:write'],
+      namespaces: ['users']
+    }
+  ]
+}));
+```
+
+A valid token without the required action scope or resource grant receives 403; an unknown token receives 401. A `ControlClient` does not need a new API for scoped credentials: pass its assigned token normally, and the server enforces the grant.
 
 Names must match `[A-Za-z0-9][A-Za-z0-9._-]{0,127}`. Instance URLs require HTTP(S), with no embedded credentials, query, or fragment. TTL is 1 second to 1 hour, default 30 seconds. Metadata is limited to 8 KiB. Configuration values must be JSON objects and are limited to 256 KiB per namespace. Defaults allow 10,000 instances and 1,000 namespaces. For alternate limits pass `registry: new ServiceRegistry(options)` and `config: new ConfigStore(options)`.
 
@@ -82,7 +103,28 @@ const response = await pool.request('/users/42', { key: '42' });
 
 Discovery feeds the existing routing/retry/circuit logic. `discover()` follows up to 100 pages (10,000 instances) within one client timeout budget; each response is bounded to 2 MiB. Page reads are not an atomic membership snapshot.
 
-For steady-state discovery, use the push watcher:
+For service-to-service callers, 0.4 adds a managed per-service pool that combines discovery watching with an isolated `PeerPool`:
+
+```js
+const users = await client.service('users', {
+  maxInflight: 64,
+  maxQueue: 128,
+  adaptiveConcurrency: {
+    min: 8,
+    initial: 16,
+    max: 64,
+    targetLatencyMs: 100
+  }
+});
+
+const response = await users.request('/users/42', { key: '42' });
+console.log(response.json(), users.poolStats());
+app.onClose(() => users.close());
+```
+
+Each `ServicePool` owns separate admission, queue, peer circuit, load-selection and adaptive-concurrency state. A saturated `users` pool therefore does not consume the `payments` pool's concurrency budget. Membership changes from the service watcher update the pool automatically. Closing a service pool stops its watcher and aborts its peer requests; it does not close the shared `ControlClient`. Closing the `ControlClient` automatically closes any managed service pools it created.
+
+For steady-state discovery without a managed service pool, use the push watcher directly:
 
 ```js
 const service = await client.watchService('users', {
@@ -125,9 +167,66 @@ New store epochs are recognized even when revision numbers match. Validation mus
 
 The initial fetch must succeed. Watchers do not persist a local cache through process restarts. `config.stop()` stops the stream/poll loop; closing the client stops configuration and service watchers.
 
+## Redis durable adapters
+
+`openmesh-node/services/redis` provides durable registry and configuration adapters without coupling the runtime to a particular Redis SDK. Pass any connected client that exposes the standard `sendCommand()` API; Node Redis works directly.
+
+```js
+import { createClient } from 'redis';
+import {
+  RedisRegistryAdapter,
+  RedisConfigAdapter
+} from 'openmesh-node/services/redis';
+
+const redis = createClient({ url: process.env.REDIS_URL });
+await redis.connect();
+
+app.register(controlPlane({
+  credentials,
+  registry: new RedisRegistryAdapter({
+    client: redis,
+    prefix: 'openmesh-prod',
+    watchInterval: 1000
+  }),
+  config: new RedisConfigAdapter({
+    client: redis,
+    prefix: 'openmesh-prod'
+  })
+}));
+
+app.onClose(() => redis.quit());
+```
+
+Registry lease creation, renewal, ownership-safe removal, revision updates, and configuration CAS writes use Redis-side Lua scripts so competing control-plane processes cannot interleave those transitions. Lease TTL is enforced by Redis itself. Registry subscriptions combine Pub/Sub for explicit membership changes with a lightweight interval check for TTL expiry, so Redis keyspace notifications are not required. Configuration watches use Pub/Sub and the configuration epoch is persisted in Redis.
+
+Adapters do not close the command client supplied by the application. Subscription connections are created with `client.duplicate()` and are owned and closed by the adapter. Use a distinct `prefix` for independent environments or test runs.
+
+## Adapter conformance
+
+Adapter authors can validate Redis, etcd, SQL, or other implementations with the published `openmesh-node/services/testing` harness.
+
+```js
+import {
+  runRegistryAdapterConformance,
+  runConfigAdapterConformance
+} from 'openmesh-node/services/testing';
+
+await runRegistryAdapterConformance({
+  create: () => new RedisRegistryAdapter(redis)
+});
+
+await runConfigAdapterConformance({
+  create: () => new PostgresConfigAdapter(db)
+});
+```
+
+The registry profile checks registration, duplicate ownership rejection, lease renewal, discovery without lease-secret exposure, ownership-safe deregistration, snapshots when present, and subscriptions when present. The configuration profile checks snapshots, compare-and-swap replacement, stale-write rejection, and subscriptions.
+
+For a durable implementation, pass `reopen` as a factory that creates a new adapter instance connected to the same backing store. The harness then verifies that an unexpired registry lease or the latest configuration survives the reopen. This is deliberately separate from the basic adapter contract so process-local development adapters can still be tested honestly.
+
 ## Operational scope
 
-The bundled registry and configuration store are **in-memory, single-process** components. Registrations/configuration are lost on restart. They do not provide replication, leader election, durable transactions, RBAC, audit history, secret encryption, or multi-writer distributed consensus. A shared Bearer token grants full access to this control plane.
+The bundled registry and configuration store are **in-memory, single-process** components. Registrations/configuration are lost on restart. They do not provide replication, leader election, durable transactions, audit history, secret encryption, or multi-writer distributed consensus. The control plane supports scoped Bearer credentials for action/resource authorization, but credential issuance, rotation, revocation distribution, and external identity integration remain deployment responsibilities.
 
 0.3 exposes `RegistryAdapter` and `ConfigAdapter` contracts. Custom implementations may be synchronous or asynchronous. Ordinary control-plane APIs require registration/list or snapshot/replace methods; SSE watch endpoints additionally require `subscribe()` returning an unsubscribe function. This allows Redis, etcd, Consul, SQL, or a standalone Go control plane to preserve the public protocol without coupling storage to the Node request runtime.
 

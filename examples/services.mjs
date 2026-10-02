@@ -1,6 +1,5 @@
 import { randomBytes } from 'node:crypto';
 import openmesh from 'openmesh-node';
-import { PeerPool } from 'openmesh-node/mesh';
 import { controlPlane, ControlClient, serviceRegistration } from 'openmesh-node/services';
 import { health, requestContext } from 'openmesh-node/plugins';
 
@@ -43,8 +42,13 @@ try {
   }
 
   gatewayControl = new ControlClient({ url: controlURL, token });
-  pool = new PeerPool({ peers: await gatewayControl.discover('users'), retries: 1, timeout: 1500 });
-  pool.watch(() => gatewayControl.discover('users'), { interval: 100, onError: error => console.error('Discovery:', error.message) });
+  pool = await gatewayControl.service('users', {
+    retries: 1,
+    timeout: 1500,
+    maxInflight: 64,
+    maxQueue: 128,
+    watch: { reconnectDelay: 100, onError: error => console.error('Discovery:', error.message) }
+  });
   gateway.use(requestContext({ service: 'gateway' }));
   gateway.onClose(() => gatewayControl.close());
   gateway.onClose(() => pool.close());
@@ -72,7 +76,11 @@ try {
     if (configured.message !== 'Welcome') throw new Error('Configuration update was not applied');
     console.log('After configuration update:', configured);
     await nodes.find(node => node.id === before.servedBy).app.close();
-    pool.updatePeers(await admin.discover('users'));
+    const removalDeadline = Date.now() + 3000;
+    while (pool.peers.some(peer => peer.id === before.servedBy)) {
+      if (Date.now() >= removalDeadline) throw new Error('Managed service pool did not converge after shutdown');
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
     const after = await (await fetch(url)).json();
     if (after.servedBy === before.servedBy) throw new Error('Stopped instance remained selected');
     console.log('After instance shutdown:', after);

@@ -6,7 +6,7 @@
 ![Node](https://img.shields.io/badge/node-%E2%89%A522-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-[API](docs/api.md) · [Microservices](docs/services.md) · [0.3 architecture](docs/architecture-0.3.md) · [Plugins](docs/plugins.md) · [Peer routing](docs/distributed.md) · [Performance](docs/performance.md) · [Go experiment](docs/native-engine.md)
+[API](docs/api.md) · [Microservices](docs/services.md) · [0.4 architecture](docs/architecture-0.4.md) · [0.3 architecture](docs/architecture-0.3.md) · [Plugins](docs/plugins.md) · [Peer routing](docs/distributed.md) · [Performance](docs/performance.md) · [Go experiment](docs/native-engine.md)
 
 A TypeScript-first Node.js service runtime with onion middleware, real Express/Fastify bridges, peer routing, registration, discovery, and live configuration. The native Node core has **zero runtime dependencies**; the package is built from one strict TypeScript source tree into ESM, CommonJS, and generated declarations.
 
@@ -17,13 +17,14 @@ Version **0.2.0 is experimental**. The performance goal is a substantial, reprod
 - Native HTTP routing, async handlers, streams, scoped plugins, route-schema compiler hooks, and graceful shutdown.
 - Node/Express middleware and complete Express application mounts.
 - Fastify plugins inside an actual, optionally installed Fastify 5 instance.
-- HTTP peer routing with keyed rendezvous affinity, load-aware P2C selection for unkeyed traffic, deadlines, retries, circuits, and bounded broadcasts.
+- HTTP peer routing with keyed rendezvous affinity, load-aware P2C selection, bounded admission/backpressure, streaming responses, deadlines, retries, circuits, and bounded broadcasts.
 - Authenticated control-plane API with protocol/capability discovery, expiring registration leases, automatic heartbeats, and pre-drain deregistration.
 - Pluggable registry/config adapters with in-memory defaults and async adapter support.
 - Push-based SSE watches for service membership and configuration, with polling compatibility.
-- Discovery that feeds the peer pool; deregistration when services shut down.
+- Managed per-service pools that combine discovery watches with isolated concurrency/queue/circuit state; deregistration when services shut down.
 - Immutable live configuration, validation, and epoch/revision compare-and-swap.
-- Request IDs, `traceparent` propagation, health endpoints, and AsyncLocalStorage request context.
+- Request IDs, `traceparent` propagation, health endpoints, AsyncLocalStorage request context, and exporter-neutral request/server/peer lifecycle events.
+- Optional adaptive concurrency with hard ceilings, plus normalized benchmark-regression budgets in CI.
 - TypeScript-first source with generated ESM/CommonJS builds and generated public declarations.
 
 The bundled control plane stores state in one process's memory. Use it for local clusters, integration testing, and early deployments; it does not provide durable or replicated consensus storage. Existing discovery callbacks can integrate an external registry. P2P means known HTTP nodes; NAT traversal and DHT are not implemented.
@@ -84,18 +85,19 @@ app.register(serviceRegistration({
 }));
 ```
 
-Configure before `app.listen()`. Set a token of at least 16 characters. Advertise an address reachable by callers; a container's loopback is usually only reachable inside that container. Registration is awaited before `listen()` resolves, renews in the background, and is removed on shutdown.
+Configure before `app.listen()`. Set a token of at least 16 characters. For production least privilege, `controlPlane({ credentials: [...] })` can restrict tokens to `meta:read`, service read/write, or config read/write scopes and to exact service/namespace names; the simple `token` option remains full access. Advertise an address reachable by callers; a container's loopback is usually only reachable inside that container. Registration is awaited before `listen()` resolves, renews in the background, and is removed on shutdown.
 
 ```js
-import { PeerPool } from 'openmesh-node/mesh';
-
-const peers = new PeerPool({ peers: await client.discover('users') });
-peers.watch(() => client.discover('users'), { interval: 1000 });
-const response = await peers.request('/users/42', { key: '42' });
+const users = await client.service('users', {
+  maxInflight: 64,
+  maxQueue: 128
+});
+const response = await users.request('/users/42', { key: '42' });
 console.log(response.peer.id, response.json());
+app.onClose(() => users.close());
 ```
 
-Close the peer pool when the application closes. POST/PATCH do not retry by default. [Exact retry and discovery semantics](docs/distributed.md).
+The managed service pool follows discovery automatically and isolates its concurrency/queue/circuit state from other services. Use `PeerPool` directly when membership comes from another registry or when no control plane is involved. POST/PATCH do not retry by default. [Exact retry and discovery semantics](docs/distributed.md).
 
 ## Live configuration
 

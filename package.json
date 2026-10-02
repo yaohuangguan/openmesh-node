@@ -53,6 +53,36 @@
         "default": "./dist/cjs/services/index.js"
       }
     },
+    "./otel": {
+      "import": {
+        "types": "./dist/types/otel/index.d.mts",
+        "default": "./dist/esm/otel/index.js"
+      },
+      "require": {
+        "types": "./dist/types/otel/index.d.ts",
+        "default": "./dist/cjs/otel/index.js"
+      }
+    },
+    "./services/testing": {
+      "import": {
+        "types": "./dist/types/services/testing/index.d.mts",
+        "default": "./dist/esm/services/testing/index.js"
+      },
+      "require": {
+        "types": "./dist/types/services/testing/index.d.ts",
+        "default": "./dist/cjs/services/testing/index.js"
+      }
+    },
+    "./services/redis": {
+      "import": {
+        "types": "./dist/types/services/redis/index.d.mts",
+        "default": "./dist/esm/services/redis/index.js"
+      },
+      "require": {
+        "types": "./dist/types/services/redis/index.d.ts",
+        "default": "./dist/cjs/services/redis/index.js"
+      }
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -80,6 +110,7 @@
     "test:types": "npm run build && tsc --ignoreConfig --noEmit --strict --types node --module NodeNext --moduleResolution NodeNext --target ES2022 tests/types.mts tests/types.cts",
     "bench": "node benchmarks/run.cjs",
     "bench:smoke": "node benchmarks/run.cjs --duration=1 --rounds=1 --connections=16 --scenarios=plaintext,json --frameworks=openmesh,fastify --output=results/smoke.json",
+    "bench:guard": "node benchmarks/guard.cjs",
     "build": "node scripts/build.cjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "prepare": "npm run build",
@@ -103,6 +134,7 @@
     "fastify": "5.12.5",
     "helmet": "8.3.0",
     "koa": "3.2.1",
+    "redis": "^6.3.0",
     "typescript": "7.0.2"
   },
   "keywords": [

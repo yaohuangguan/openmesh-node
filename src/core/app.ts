@@ -50,6 +50,16 @@ export interface ServerLimits {
   maxHeadersCount?: number;
 }
 
+export type AppEvent =
+  | { type: 'request.start'; at: number; method: string; path: string; route: string | null }
+  | { type: 'request.finish'; at: number; method: string; path: string; route: string | null; statusCode: number; durationMs: number; aborted: boolean }
+  | { type: 'request.error'; at: number; method: string; path: string; route: string | null; code?: string; statusCode?: number }
+  | { type: 'server.listening'; at: number; address: AddressInfo | string | null }
+  | { type: 'server.closing'; at: number }
+  | { type: 'server.closed'; at: number };
+
+export type AppObserver = (event: AppEvent) => void;
+
 export interface AppOptions {
   pluginTimeout?: number;
   shutdownTimeout?: number;
@@ -57,6 +67,7 @@ export interface AppOptions {
   serverLimits?: ServerLimits;
   validatorCompiler?: ValidatorCompiler;
   serializerCompiler?: SerializerCompiler;
+  onEvent?: AppObserver;
 }
 
 export interface PluginOptions {
@@ -248,6 +259,7 @@ export class OpenMesh {
   _serverLimits: ResolvedServerLimits;
   _validatorCompiler: ValidatorCompiler | null;
   _serializerCompiler: SerializerCompiler | null;
+  _observer: AppObserver | null;
   _listener: (req: http.IncomingMessage, res: http.ServerResponse) => void;
   _listenHooksPromise: Promise<void> | null = null;
   _fallback: Handler = ctx => this._fallbackHandler(ctx);
@@ -291,6 +303,10 @@ export class OpenMesh {
     if (this._serializerCompiler !== null && typeof this._serializerCompiler !== 'function') {
       throw new TypeError('serializerCompiler must be a function');
     }
+    if (options.onEvent !== undefined && typeof options.onEvent !== 'function') {
+      throw new TypeError('onEvent must be a function');
+    }
+    this._observer = options.onEvent ?? null;
     this._listener = (req, res) => this._dispatch(req, res);
   }
 
@@ -298,6 +314,12 @@ export class OpenMesh {
   get phase(): string { return this._root._phase; }
   get prefix(): string { return this._prefix; }
   get version(): string { return '0.2.0'; }
+
+  _emit(event: AppEvent): void {
+    const observer = this._root._observer;
+    if (!observer) return;
+    try { observer(event); } catch {}
+  }
 
   _assertMutable(): void {
     if (!['configuring', 'booting'].includes(this._root._phase)) {
@@ -667,6 +689,7 @@ export class OpenMesh {
         for (const hook of root._listenHooks) await hook(address);
       })();
       await root._listenHooksPromise;
+      root._emit({ type: 'server.listening', at: Date.now(), address });
       return address;
     } catch (error) {
       if (root._server?.listening) {
@@ -712,6 +735,7 @@ export class OpenMesh {
         try { await root._readyPromise; } catch {}
       }
       root._phase = 'closing';
+      if (root._server) root._emit({ type: 'server.closing', at: Date.now() });
       if (root._listenHooksPromise) {
         try { await root._listenHooksPromise; } catch {}
       }
@@ -737,6 +761,7 @@ export class OpenMesh {
 
       try { await root._runCloseHooks(); } catch (error) { errors.push(error); }
       root._phase = 'closed';
+      if (root._server) root._emit({ type: 'server.closed', at: Date.now() });
       if (errors.length === 1) throw errors[0];
       if (errors.length > 1) throw new AggregateError(errors, 'Application shutdown failed');
     })();
@@ -780,6 +805,36 @@ export class OpenMesh {
       const actualRoute = route && 'paramNames' in route ? route : null;
       const scope = (route as unknown as MountRecord | undefined)?.scope || notFound?.scope || this;
       ctx = new Context(req, res, scope, path, actualRoute, match?.values || null);
+      ctx.routePattern = actualRoute?.path
+        || ((route as unknown as MountRecord | undefined)?.prefix ?? null)
+        || notFound?.prefix
+        || null;
+
+      if (this._root._observer) {
+        const started = performance.now();
+        let observedFinish = false;
+        const finish = (aborted: boolean): void => {
+          if (observedFinish) return;
+          observedFinish = true;
+          res.off('finish', finished);
+          res.off('close', closed);
+          this._emit({
+            type: 'request.finish',
+            at: Date.now(),
+            method: req.method || 'GET',
+            path,
+            route: ctx!.routePattern,
+            statusCode: res.statusCode,
+            durationMs: performance.now() - started,
+            aborted
+          });
+        };
+        const finished = (): void => finish(false);
+        const closed = (): void => finish(!res.writableFinished);
+        res.once('finish', finished);
+        res.once('close', closed);
+        this._emit({ type: 'request.start', at: Date.now(), method: req.method || 'GET', path, route: ctx.routePattern });
+      }
 
       const result = route
         ? (route as unknown as { run: Handler }).run(ctx)
@@ -802,6 +857,16 @@ export class OpenMesh {
 
   _handleError(error: unknown, ctx: Context): void {
     const normalized = error instanceof Error ? error : new Error('Request failed', { cause: error });
+    const observed = normalized as Error & { code?: string; statusCode?: number };
+    this._emit({
+      type: 'request.error',
+      at: Date.now(),
+      method: ctx.req.method || 'GET',
+      path: ctx.path,
+      route: ctx.routePattern,
+      ...(observed.code ? { code: observed.code } : {}),
+      ...(Number.isInteger(observed.statusCode) ? { statusCode: observed.statusCode } : {})
+    });
     if (ctx.res.writableEnded || ctx.res.destroyed) return;
     if (ctx.res.headersSent) {
       ctx.res.destroy(normalized);

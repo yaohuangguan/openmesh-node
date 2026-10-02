@@ -1,20 +1,40 @@
-import openmesh, { definePlugin, HttpError, type Context } from 'openmesh-node';
+import openmesh, { definePlugin, HttpError, type AppEvent, type Context } from 'openmesh-node';
 import { jsonBody, requestContext, health } from 'openmesh-node/plugins';
-import { PeerPool, type PeerSelectionStrategy } from 'openmesh-node/mesh';
-import { ControlClient, controlPlane, serviceRegistration, ConfigStore, ServiceRegistry, type ControlPlaneInfo } from 'openmesh-node/services';
-const app = openmesh();
+import { PeerPool, type PeerPoolEvent, type PeerPoolStats, type PeerSelectionStrategy } from 'openmesh-node/mesh';
+import { ControlClient, controlPlane, serviceRegistration, ConfigStore, ServiceRegistry, type ControlCredential, type ControlPlaneInfo } from 'openmesh-node/services';
+import { createOpenTelemetryObservers, type OpenTelemetryMeter } from 'openmesh-node/otel';
+import { runRegistryAdapterConformance, runConfigAdapterConformance } from 'openmesh-node/services/testing';
+import { RedisRegistryAdapter, RedisConfigAdapter } from 'openmesh-node/services/redis';
+import { createClient } from 'redis';
+const app = openmesh({ onEvent: (event: AppEvent) => { void event.type; } });
 app.use(jsonBody()).use(requestContext()).register(health());
 app.get('/users/:id', (ctx: Context) => ({ id: ctx.params.id }));
 app.register(definePlugin(async scope => { scope.get('/status', () => 'ok'); }, { name: 'example' }));
 app.setErrorHandler((error, ctx) => { ctx.status = error instanceof HttpError ? error.statusCode : 500; return { error: 'handled' }; });
 const selection: PeerSelectionStrategy = 'p2c';
-const peers = new PeerPool({ peers: [{ id: 'local', url: 'http://127.0.0.1:3000' }], selection });
+const peers = new PeerPool({
+  peers: [{ id: 'local', url: 'http://127.0.0.1:3000' }],
+  selection,
+  maxInflight: 64,
+  maxQueue: 128,
+  onEvent: (event: PeerPoolEvent) => { void event.type; },
+  adaptiveConcurrency: { min: 4, initial: 8, max: 32, targetLatencyMs: 100 }
+});
+const peerPoolStats: PeerPoolStats = peers.poolStats();
+void peerPoolStats.overloadRejections;
 await peers.json('/users/42', { key: '42', timeout: 1000 });
+const streamed = await peers.requestStream('/users/42', { idleTimeout: 30000 });
+const streamedText: string = await streamed.text();
+void streamedText;
 peers.close();
 const control = new ControlClient({ url: 'http://127.0.0.1:4000/_mesh', token: 'example-token-value' });
 const controlInfo: Readonly<ControlPlaneInfo> = await control.info();
+const servicePool = await control.service('users', { maxInflight: 32, maxQueue: 64 });
+void servicePool.poolStats().maxInflight;
+servicePool.close();
 void controlInfo.capabilities.serviceWatch;
-app.register(controlPlane({ token: 'example-token-value' }));
+const scopedCredential: ControlCredential = { token: 'scoped-token-value-1234', scopes: ['services:read'], services: ['users'] };
+app.register(controlPlane({ credentials: [scopedCredential] }));
 app.register(serviceRegistration({ client: control, service: 'users', id: 'users-a', url: address => typeof address === 'object' && address ? 'http://127.0.0.1:' + address.port : 'http://127.0.0.1:3000' }));
 app.onListen(async scope => { const healthy: boolean | undefined = scope.registration?.healthy; void healthy; });
 app.onShutdown(async () => {});
@@ -33,3 +53,20 @@ schemaApp
   .setSerializerCompiler(() => body => JSON.stringify(body))
   .use(jsonBody({ prototypeAction: 'remove' }))
   .post('/schema', { schema: { body: { type: 'object' }, response: { '2xx': { type: 'object' } } } }, ctx => ctx.requestBody);
+
+const telemetryMeter: OpenTelemetryMeter = {
+  createCounter: () => ({ add: () => {} }),
+  createHistogram: () => ({ record: () => {} })
+};
+const telemetryObservers = createOpenTelemetryObservers({ meter: telemetryMeter, attributes: { service: 'users' } });
+telemetryObservers.onAppEvent({ type: 'server.closing', at: Date.now() });
+telemetryObservers.onPeerEvent({ type: 'admission.rejected', at: Date.now(), inflight: 1, queued: 2 });
+
+void runRegistryAdapterConformance({ create: () => new ServiceRegistry({ sweepInterval: 0 }) });
+void runConfigAdapterConformance({ create: () => new ConfigStore() });
+
+const typedRedisClient = createClient({ url: 'redis://127.0.0.1:6379' });
+const typedRedisRegistry = new RedisRegistryAdapter({ client: typedRedisClient, prefix: 'openmesh-types' });
+const typedRedisConfig = new RedisConfigAdapter({ client: typedRedisClient, prefix: 'openmesh-types' });
+void typedRedisRegistry;
+void typedRedisConfig;
