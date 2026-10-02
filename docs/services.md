@@ -16,6 +16,7 @@ Set `OPENMESH_TOKEN` to 16..1024 printable ASCII characters without spaces. Clie
 
 | Method | Path below `/_mesh` | Payload / result |
 | --- | --- | --- |
+| GET | `/meta` | control protocol version and optional capabilities |
 | POST | `/services/:service/instances/:id` | `{ url, ttl, metadata }` → lease, 201 |
 | PUT | `/services/:service/instances/:id/lease` | `{ leaseId }` → renewed lease |
 | DELETE | `/services/:service/instances/:id` | `{ leaseId }` → 204 |
@@ -24,6 +25,8 @@ Set `OPENMESH_TOKEN` to 16..1024 printable ASCII characters without spaces. Clie
 | GET | `/config/:namespace` | `{ namespace, epoch, revision, values }` |
 | PUT | `/config/:namespace` | `{ values, expectedEpoch, expectedRevision }` → snapshot |
 | GET | `/watch/config/:namespace` | authenticated SSE configuration snapshots |
+
+The control protocol uses the name `openmesh-control` and major version `1`. `await client.info()` validates that protocol version and returns capability flags for service/config streaming watches, membership revisions, and configuration CAS. The handshake is explicit rather than automatic, so ordinary calls do not pay an extra network round trip.
 
 Names must match `[A-Za-z0-9][A-Za-z0-9._-]{0,127}`. Instance URLs require HTTP(S), with no embedded credentials, query, or fragment. TTL is 1 second to 1 hour, default 30 seconds. Metadata is limited to 8 KiB. Configuration values must be JSON objects and are limited to 256 KiB per namespace. Defaults allow 10,000 instances and 1,000 namespaces. For alternate limits pass `registry: new ServiceRegistry(options)` and `config: new ConfigStore(options)`.
 
@@ -45,7 +48,7 @@ app.register(serviceRegistration({
 }));
 ```
 
-The plugin uses `onListen` to register the bound address, then awaits acknowledgement before `listen()` resolves. A failed initial registration closes the bound listener and runs cleanup hooks. The server is already bound while hooks run: use readiness checks to gate traffic until `app.registration?.healthy` is true. This lifecycle works with `app.listen()`; an externally owned `callback()` server must register itself manually after binding.
+The plugin uses `onListen` to register the bound address, then awaits acknowledgement before `listen()` resolves. A failed initial registration closes the bound listener and runs cleanup hooks. During graceful shutdown it removes the lease in the pre-drain `onShutdown` phase, so new discovery traffic stops selecting the instance while requests already in flight can finish. If deregistration fails, listener draining still proceeds and the lease expires by TTL. The server is already bound while listen hooks run: use readiness checks to gate traffic until `app.registration?.healthy` is true. This lifecycle works with `app.listen()`; an externally owned `callback()` server must register itself manually after binding.
 
 Choose a URL reachable by peers, especially in containers. The framework does not infer external proxy ports, container IPs or public addresses. Register shutdown cleanup before startup. The plugin creates `app.registration` and removes its own lease during shutdown; close the provided client separately as shown.
 

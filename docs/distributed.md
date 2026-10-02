@@ -9,7 +9,8 @@ import { PeerPool } from 'openmesh-node/mesh';
 const pool = new PeerPool({
   peers: [{ id: 'a', url: 'https://users-a.example.com' }],
   timeout: 2000, retries: 1, failureThreshold: 3, cooldown: 10000,
-  maxResponseBytes: 1024 * 1024, maxSockets: 32
+  maxResponseBytes: 1024 * 1024, maxSockets: 32,
+  selection: 'p2c'
 });
 const result = await pool.request('/users/42', { key: '42' });
 console.log(result.peer.id, result.statusCode, result.json());
@@ -18,9 +19,10 @@ pool.close();
 
 | Behavior | Exact scope |
 | --- | --- |
-| Routing | SHA-256 rendezvous ranking of key + stable peer ID; independent of list order |
+| Keyed routing | SHA-256 rendezvous ranking of key + stable peer ID; independent of list order |
 | Membership change | Removed-owner keys move; unchanged peer IDs retain preference |
-| No supplied key | Generated per-call keys distribute preference; not strict round-robin |
+| No supplied key | Default `p2c` selection compares the first two rendezvous candidates and prefers the healthier, less-loaded peer |
+| Compatibility mode | `selection: 'rendezvous'` keeps generated per-call rendezvous ranking without load-aware reordering |
 | Retry | Distinct available peers; at most `retries + 1` attempts |
 | Retriable failure | Transport error, oversized/aborted response, or HTTP 5xx |
 | HTTP 4xx | Returned as a response; not retried |
@@ -30,7 +32,7 @@ pool.close();
 | Transport | Keep-alive HTTP/HTTPS; 32 sockets per origin by default, 256 total per protocol agent |
 | Response | Buffered, bounded bytes; no streaming client API in 0.1 |
 
-`pool.rank(key)` returns ordered peers. `pool.stats()` returns failures, attempts, circuit state and probe status. Circuit state is local to this process; it is not cluster-wide health consensus. An expired request deadline counts as a failed peer attempt. The deadline does not encompass asynchronous service discovery, which is run separately.
+`pool.rank(key)` always returns the raw rendezvous order and is unaffected by adaptive selection. `pool.stats()` returns failures, attempts, successes, in-flight requests, latency telemetry, circuit state and probe status. Circuit state is local to this process; it is not cluster-wide health consensus. An expired request deadline counts as a failed peer attempt. The deadline does not encompass asynchronous service discovery, which is run separately.
 
 The built-in client returns `PeerResponse` with `peer`, `statusCode`, `headers`, `body`, `.text()` and `.json()`. `pool.json()` is a convenience; use `request()` when application handling depends on the HTTP status. `PeerError.code` identifies errors such as `NO_PEERS`, `NO_HEALTHY_PEERS`, `REMOTE_HTTP_ERROR`, `DEADLINE_EXCEEDED`, `RESPONSE_TOO_LARGE`, and `POOL_CLOSED`. Native socket errors retain their Node codes.
 

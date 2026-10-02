@@ -34,7 +34,18 @@ test('configuration updates use CAS and immutable bounded snapshots', () => {
 test('real control-plane HTTP requires authentication and supports registration/discovery/configuration', async t => {
   const app = openmesh().register(controlPlane({ token })); const url = await serve(t, app);
   assert.equal((await request(url, '/_mesh/services/users')).status, 401);
+  assert.equal((await request(url, '/_mesh/meta')).status, 401);
   const client = new ControlClient({ url: url + '/_mesh', token }); t.after(() => client.close());
+  assert.deepEqual(await client.info(), {
+    protocol: 'openmesh-control',
+    version: 1,
+    capabilities: {
+      serviceWatch: true,
+      configWatch: true,
+      membershipRevision: true,
+      configCAS: true
+    }
+  });
   const registration = await client.register('users', { id: 'a', url: url, ttl: 1000 });
   assert.equal(registration.healthy, true); assert.equal((await client.discover('users'))[0].id, 'a');
   const snapshot = await client.getConfig('users');
@@ -54,6 +65,55 @@ test('server registers its actual listening address and deregisters on shutdown'
     const pool = new PeerPool({ peers: instances }); try { assert.deepEqual(await pool.json('/'), { alive: true }); } finally { pool.close(); }
     await app.close(); assert.deepEqual(await client.discover('users'), []);
   } finally { await app.close(); await client.close(); }
+});
+
+test('service leaves discovery before in-flight requests finish draining', async t => {
+  const control = await serve(t, openmesh().register(controlPlane({ token })));
+  const client = new ControlClient({ url: control + '/_mesh', token });
+  let entered;
+  const started = new Promise(resolve => { entered = resolve; });
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const app = openmesh({ shutdownTimeout: 1000 })
+    .register(serviceRegistration({
+      client,
+      service: 'users',
+      id: 'draining',
+      ttl: 1000,
+      url: address => 'http://127.0.0.1:' + address.port
+    }))
+    .get('/', async () => {
+      entered();
+      await gate;
+      return { drained: true };
+    });
+
+  try {
+    const address = await app.listen({ port: 0 });
+    const pending = request('http://127.0.0.1:' + address.port);
+    await started;
+
+    const closing = app.close();
+    const deadline = Date.now() + 500;
+    while ((await client.discover('users')).length) {
+      if (Date.now() >= deadline) throw new Error('Draining service stayed discoverable');
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+
+    const stillDraining = await Promise.race([
+      closing.then(() => false),
+      new Promise(resolve => setTimeout(() => resolve(true), 20))
+    ]);
+    assert.equal(stillDraining, true);
+
+    release();
+    assert.deepEqual((await pending).json(), { drained: true });
+    await closing;
+  } finally {
+    release?.();
+    await app.close().catch(() => {});
+    await client.close().catch(() => {});
+  }
 });
 
 test('failed registration startup closes the bound server and cleanup hooks', async () => {

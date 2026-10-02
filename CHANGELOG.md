@@ -10,6 +10,9 @@
 - Add pluggable route validator/serializer compiler contracts without adding runtime dependencies.
 - Harden JSON parsing against prototype keys by default and expose explicit server timeout/header limits.
 - Document the intended Go boundary: standalone control plane first, not per-request Go-to-JavaScript bridging.
+- Add authenticated `/_mesh/meta` protocol/capability discovery and `ControlClient.info()` for explicit control-plane compatibility checks.
+- Remove service registrations in the pre-drain shutdown phase so discovery stops sending new work to draining instances.
+- Add default power-of-two-choice load-aware selection for unkeyed peer traffic while preserving rendezvous affinity for keyed requests.
 
 ## 0.2.0
 
