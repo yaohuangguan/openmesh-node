@@ -1,3 +1,5 @@
+[Reading 34 lines from start (total: 34 lines, 873 B)]
+
 import './styles.css';
 
 const copyButtons = document.querySelectorAll<HTMLButtonElement>('[data-copy]');
@@ -10,23 +12,24 @@ for (const button of copyButtons) {
     try {
       await navigator.clipboard.writeText(value);
       const previous = button.textContent;
-      button.textContent = 'Copied';
+      button.textContent = 'copied';
       button.classList.add('copied');
+
       window.setTimeout(() => {
         button.textContent = previous;
         button.classList.remove('copied');
-      }, 1400);
+      }, 1300);
     } catch {
-      button.textContent = 'Select & copy';
+      button.textContent = 'select + copy';
     }
   });
 }
 
-const header = document.querySelector<HTMLElement>('.site-header');
+const topbar = document.querySelector<HTMLElement>('.topbar');
 
-const updateHeader = () => {
-  header?.classList.toggle('scrolled', window.scrollY > 12);
+const syncHeader = () => {
+  topbar?.classList.toggle('scrolled', window.scrollY > 18);
 };
 
-updateHeader();
-window.addEventListener('scroll', updateHeader, { passive: true });
+syncHeader();
+window.addEventListener('scroll', syncHeader, { passive: true });
