@@ -6,7 +6,7 @@
 ![Node](https://img.shields.io/badge/node-%E2%89%A522-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-[API](docs/api.md) · [Microservices](docs/services.md) · [Plugins](docs/plugins.md) · [Peer routing](docs/distributed.md) · [Performance](docs/performance.md) · [Go experiment](docs/native-engine.md)
+[API](docs/api.md) · [Microservices](docs/services.md) · [0.3 architecture](docs/architecture-0.3.md) · [Plugins](docs/plugins.md) · [Peer routing](docs/distributed.md) · [Performance](docs/performance.md) · [Go experiment](docs/native-engine.md)
 
 A Node.js HTTP framework for service-to-service communication, with onion middleware, real Express/Fastify bridges, and optional registration, discovery, and configuration modules. The native Node core has **zero runtime dependencies**.
 
@@ -14,11 +14,13 @@ Version **0.2.0 is experimental**. The performance goal is a substantial, reprod
 
 ## What is included
 
-- Native HTTP routing, async handlers, streams, scoped plugins, and graceful shutdown.
+- Native HTTP routing, async handlers, streams, scoped plugins, route-schema compiler hooks, and graceful shutdown.
 - Node/Express middleware and complete Express application mounts.
 - Fastify plugins inside an actual, optionally installed Fastify 5 instance.
 - HTTP peer routing with rendezvous hashing, deadlines, retries, circuits, and bounded broadcasts.
 - Authenticated control-plane API with expiring registration leases and automatic heartbeats.
+- Pluggable registry/config adapters with in-memory defaults and async adapter support.
+- Push-based SSE watches for service membership and configuration, with polling compatibility.
 - Discovery that feeds the peer pool; deregistration when services shut down.
 - Immutable live configuration, validation, and epoch/revision compare-and-swap.
 - Request IDs, `traceparent` propagation, health endpoints, ESM/CommonJS, and TypeScript types.

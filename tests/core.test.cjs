@@ -4,7 +4,7 @@ const { Readable } = require('node:stream');
 const http = require('node:http');
 const openmesh = require('../index.cjs');
 const { definePlugin } = openmesh;
-const { jsonBody, requestContext, health } = require('../plugins/index.cjs');
+const { jsonBody, requestContext, currentRequestContext, health } = require('../plugins/index.cjs');
 const { serve, request } = require('./helpers.cjs');
 
 test('sync/async handlers, JSON, bytes, streams and empty replies', async t => {
@@ -85,6 +85,29 @@ test('trace context preserves trace id, changes span, and validates request id',
   assert.equal(res.headers['x-request-id'], 'valid-42'); assert.equal(res.json().traceparent.slice(3, 35), trace.slice(3, 35)); assert.notEqual(res.json().traceparent, trace);
   const invalid = await request(url, '/', { headers: { traceparent: 'broken', 'x-request-id': 'bad id' } }); assert.notEqual(invalid.headers['x-request-id'], 'bad id'); assert.match(invalid.json().traceparent, /^00-[a-f0-9]{32}-[a-f0-9]{16}-01$/);
 });
+
+test('request context survives async boundaries without explicit ctx plumbing', async t => {
+  assert.equal(currentRequestContext(), null);
+  const app = openmesh().use(requestContext({ service: 'als-test' })).get('/', async ctx => {
+    await Promise.resolve();
+    const store = currentRequestContext();
+    return {
+      sameState: store === ctx.state,
+      service: store?.service,
+      requestId: store?.requestId,
+      traceparent: store?.traceparent
+    };
+  });
+  const url = await serve(t, app);
+  const response = await fetch(url + '/');
+  const body = await response.json();
+  assert.equal(body.sameState, true);
+  assert.equal(body.service, 'als-test');
+  assert.equal(typeof body.requestId, 'string');
+  assert.match(body.traceparent, /^00-[\da-f]{32}-[\da-f]{16}-[\da-f]{2}$/);
+  assert.equal(currentRequestContext(), null);
+});
+
 test('health endpoints reflect readiness', async t => {
   let ready = false; const app = openmesh().register(health({ ready: () => ready })); const url = await serve(t, app);
   assert.equal((await request(url, '/health/live')).status, 200); assert.equal((await request(url, '/health/ready')).status, 503); ready = true; assert.equal((await request(url, '/health/ready')).status, 200);
@@ -120,4 +143,96 @@ test('shutdown timeout destroys an unresponsive connection and still cleans reso
   const pending = request('http://127.0.0.1:' + address.port).then(() => false, () => true);
   await started; await app.close();
   assert.equal(await pending, true); assert.equal(closed, true); assert.equal(app.phase, 'closed');
+});
+
+
+test('scoped not-found handlers preserve plugin encapsulation and middleware', async t => {
+  const app = openmesh();
+  app.setNotFoundHandler(ctx => ({ scope: 'root', private: ctx.app.onlyHere === undefined }));
+  app.register(scope => {
+    scope.decorate('onlyHere', 'plugin');
+    scope.use(async (ctx, next) => { ctx.set('x-plugin-scope', 'yes'); await next(); });
+    scope.setNotFoundHandler(ctx => ({ scope: 'api', private: ctx.app.onlyHere }));
+  }, { prefix: '/api' });
+  const url = await serve(t, app);
+  const api = await request(url, '/api/missing');
+  assert.deepEqual(api.json(), { scope: 'api', private: 'plugin' });
+  assert.equal(api.headers['x-plugin-scope'], 'yes');
+  const root = await request(url, '/outside');
+  assert.deepEqual(root.json(), { scope: 'root', private: true });
+  assert.equal(root.headers['x-plugin-scope'], undefined);
+});
+
+test('shutdown hooks run before listener drain and close hooks', async () => {
+  const events = [], app = openmesh();
+  app.onShutdown(() => events.push('shutdown'));
+  app.onClose(() => events.push('close'));
+  await app.listen({ port: 0 });
+  await app.close();
+  assert.deepEqual(events, ['shutdown', 'close']);
+});
+
+
+test('shutdown hook failures do not skip listener drain or close hooks', async () => {
+  let closed = false;
+  const app = openmesh();
+  app.onShutdown(() => { throw new Error('shutdown failed'); });
+  app.onClose(() => { closed = true; });
+  await app.listen({ port: 0 });
+  await assert.rejects(app.close(), /Shutdown hooks failed/);
+  assert.equal(app.server.listening, false);
+  assert.equal(closed, true);
+  assert.equal(app.phase, 'closed');
+});
+
+
+test('route schema compilers validate inputs and serialize matching response statuses', async t => {
+  const app = openmesh();
+  app.setValidatorCompiler(({ schema }) => value => typeof value?.[schema.required] === schema.type);
+  app.setSerializerCompiler(({ schema }) => value => JSON.stringify({ [schema.pick]: value[schema.pick] }));
+  app.use(jsonBody());
+  app.post('/users', {
+    schema: {
+      body: { required: 'name', type: 'string' },
+      response: { '2xx': { pick: 'name' } }
+    }
+  }, ctx => ({ name: ctx.requestBody.name, internal: true }));
+  const url = await serve(t, app);
+  const ok = await request(url, '/users', { method: 'POST', body: { name: 'Sam' } });
+  assert.deepEqual(ok.json(), { name: 'Sam' });
+  const invalid = await request(url, '/users', { method: 'POST', body: { name: 42 } });
+  assert.equal(invalid.status, 400);
+  assert.deepEqual(invalid.json(), { error: 'Validation failed for body' });
+});
+
+test('schema routes fail startup when required compilers are missing', async () => {
+  await assert.rejects(openmesh().get('/', { schema: { params: {} } }, () => 'ok').ready(), /validator compiler/);
+  const withValidator = openmesh().setValidatorCompiler(() => () => true).get('/', { schema: { response: { 200: {} } } }, () => ({}));
+  await assert.rejects(withValidator.ready(), /serializer compiler/);
+});
+
+test('JSON parser rejects prototype keys by default and can remove them explicitly', async t => {
+  const strict = openmesh().use(jsonBody()).post('/', ctx => ctx.requestBody);
+  const strictUrl = await serve(t, strict);
+  const unsafe = await request(strictUrl, '/', { method: 'POST', body: '{"__proto__":{"polluted":true}}', headers: { 'content-type': 'application/json' } });
+  assert.equal(unsafe.status, 400);
+  assert.equal({}.polluted, undefined);
+
+  const removing = openmesh().use(jsonBody({ prototypeAction: 'remove' })).post('/', ctx => ctx.requestBody);
+  const removingUrl = await serve(t, removing);
+  const cleaned = await request(removingUrl, '/', { method: 'POST', body: '{"safe":1,"constructor":{"prototype":{"polluted":true}}}', headers: { 'content-type': 'application/json' } });
+  assert.deepEqual(cleaned.json(), { safe: 1 });
+  assert.equal({}.polluted, undefined);
+});
+
+test('server hardening limits are explicit and configurable', async () => {
+  const app = openmesh({ serverLimits: { requestTimeout: 90000, headersTimeout: 8000, keepAliveTimeout: 4000, maxHeadersCount: 64 } }).get('/', () => 'ok');
+  await app.listen({ port: 0 });
+  try {
+    assert.equal(app.server.requestTimeout, 90000);
+    assert.equal(app.server.headersTimeout, 8000);
+    assert.equal(app.server.keepAliveTimeout, 4000);
+    assert.equal(app.server.maxHeadersCount, 64);
+  } finally { await app.close(); }
+  assert.throws(() => openmesh({ serverLimits: { requestTimeout: 1000, headersTimeout: 2000 } }), /cannot exceed/);
 });

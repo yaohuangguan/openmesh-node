@@ -50,7 +50,13 @@ class PeerPool {
   updatePeers(peers) {
     if (this._closed) throw new PeerError('Peer pool is closed', 'POOL_CLOSED');
     const next = validatePeers(peers), states = new Map();
-    for (const peer of next) { const previous = this._states.get(peer.id); states.set(peer.id, previous?.url === peer.url ? previous : { url: peer.url, failures: 0, unavailableUntil: 0, probing: false, attempts: 0 }); }
+    for (const peer of next) {
+      const previous = this._states.get(peer.id);
+      states.set(peer.id, previous?.url === peer.url ? previous : {
+        url: peer.url, failures: 0, unavailableUntil: 0, probing: false, attempts: 0,
+        successes: 0, inflight: 0, lastLatencyMs: null, ewmaLatencyMs: null, lastSuccessAt: null, lastFailureAt: null
+      });
+    }
     this._states = states; this._peers = next; this._cache.clear(); return this;
   }
   get peers() { return this._peers.slice(); }
@@ -63,15 +69,40 @@ class PeerPool {
     }
     return ranked.slice();
   }
-  stats() { const now = Date.now(); return this._peers.map(peer => { const state = this._states.get(peer.id); return { ...peer, failures: state.failures, attempts: state.attempts, circuit: state.unavailableUntil > now ? 'open' : state.failures >= this.failureThreshold ? 'half-open' : 'closed', probing: state.probing }; }); }
+  stats() {
+    const now = Date.now();
+    return this._peers.map(peer => {
+      const state = this._states.get(peer.id);
+      return {
+        ...peer,
+        failures: state.failures, attempts: state.attempts, successes: state.successes, inflight: state.inflight,
+        lastLatencyMs: state.lastLatencyMs, ewmaLatencyMs: state.ewmaLatencyMs,
+        lastSuccessAt: state.lastSuccessAt, lastFailureAt: state.lastFailureAt,
+        circuit: state.unavailableUntil > now ? 'open' : state.failures >= this.failureThreshold ? 'half-open' : 'closed',
+        probing: state.probing
+      };
+    });
+  }
   _claim(peer) {
     const state = this._states.get(peer.id);
     if (!state || state.url !== peer.url || state.unavailableUntil > Date.now() || state.probing) return null;
     if (state.failures >= this.failureThreshold) state.probing = true;
-    state.attempts++; return state;
+    state.attempts++; state.inflight++; return state;
   }
-  _success(state) { state.failures = 0; state.unavailableUntil = 0; state.probing = false; }
-  _failure(state) { state.failures++; state.probing = false; if (state.failures >= this.failureThreshold) state.unavailableUntil = Date.now() + this.cooldown; }
+  _latency(state, latency) {
+    state.lastLatencyMs = latency;
+    state.ewmaLatencyMs = state.ewmaLatencyMs === null ? latency : state.ewmaLatencyMs * 0.8 + latency * 0.2;
+  }
+  _success(state, latency) {
+    state.inflight = Math.max(0, state.inflight - 1); state.successes++; this._latency(state, latency);
+    state.lastSuccessAt = Date.now(); state.failures = 0; state.unavailableUntil = 0; state.probing = false;
+  }
+  _failure(state, latency) {
+    state.inflight = Math.max(0, state.inflight - 1); state.failures++; this._latency(state, latency);
+    state.lastFailureAt = Date.now(); state.probing = false;
+    if (state.failures >= this.failureThreshold) state.unavailableUntil = Date.now() + this.cooldown;
+  }
+  _cancel(state) { state.inflight = Math.max(0, state.inflight - 1); state.probing = false; }
   _send({ url, method, headers, body, signal, maxResponseBytes }) {
     return new Promise((resolve, reject) => {
       const secure = url.protocol === 'https:';
@@ -116,13 +147,14 @@ class PeerPool {
       for (const peer of candidates) {
         const state = this._claim(peer); if (!state) continue;
         count++;
+        const started = performance.now();
         try {
           const response = await raceAbort(this._transport({ peer, url: targetURL(peer, path), method, headers, body, signal, maxResponseBytes: this.maxResponseBytes }), signal);
           if (response.statusCode >= 500) throw new PeerError('Peer returned HTTP ' + response.statusCode, 'REMOTE_HTTP_ERROR', { peer, statusCode: response.statusCode });
-          this._success(state); return new PeerResponse(peer, response);
+          this._success(state, performance.now() - started); return new PeerResponse(peer, response);
         } catch (error) {
-          if (options.signal?.aborted || this._closed) { state.probing = false; throw signal.reason || error; }
-          this._failure(state); lastError = error;
+          if (options.signal?.aborted || this._closed) { this._cancel(state); throw signal.reason || error; }
+          this._failure(state, performance.now() - started); lastError = error;
           if (signal.aborted) throw signal.reason;
           if (count >= attempts) break;
         }

@@ -1,8 +1,26 @@
 'use strict';
 const { randomUUID, randomBytes } = require('node:crypto');
+const { AsyncLocalStorage } = require('node:async_hooks');
 const { HttpError } = require('../lib/context.cjs');
-function jsonBody({ limit = 1024 * 1024 } = {}) {
+const requestStorage = new AsyncLocalStorage();
+function protectPrototypeKeys(value, action) {
+  if (action === 'ignore' || value === null || typeof value !== 'object') return value;
+  const pending = [value];
+  while (pending.length) {
+    const current = pending.pop();
+    for (const key of Object.keys(current)) {
+      if (key === '__proto__' || key === 'constructor') {
+        if (action === 'error') throw new HttpError(400, 'JSON body contains forbidden prototype keys', { code: 'UNSAFE_JSON_KEY' });
+        delete current[key]; continue;
+      }
+      const child = current[key]; if (child && typeof child === 'object') pending.push(child);
+    }
+  }
+  return value;
+}
+function jsonBody({ limit = 1024 * 1024, prototypeAction = 'error' } = {}) {
   if (!Number.isSafeInteger(limit) || limit <= 0) throw new TypeError('Body limit must be a positive integer');
+  if (!['error', 'remove', 'ignore'].includes(prototypeAction)) throw new TypeError('prototypeAction must be error, remove or ignore');
   return async (ctx, next) => {
     const type = (ctx.get('content-type') || '').split(';')[0].trim().toLowerCase();
     if (ctx.req.body !== undefined || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(ctx.method) || !(type === 'application/json' || type.endsWith('+json'))) return next();
@@ -17,7 +35,11 @@ function jsonBody({ limit = 1024 * 1024 } = {}) {
       function ended() { if (settled) return; settled = true; clean(); resolve(Buffer.concat(chunks, size)); }
       ctx.req.on('data', data); ctx.req.once('end', ended); ctx.req.once('error', failed); ctx.req.once('aborted', aborted);
     });
-    try { ctx.req.body = body.length ? JSON.parse(body.toString('utf8')) : undefined; } catch (_) { throw new HttpError(400, 'Invalid JSON body'); }
+    if (!body.length) ctx.req.body = undefined;
+    else {
+      let parsed; try { parsed = JSON.parse(body.toString('utf8')); } catch (_) { throw new HttpError(400, 'Invalid JSON body'); }
+      ctx.req.body = protectPrototypeKeys(parsed, prototypeAction);
+    }
     return next();
   };
 }
@@ -33,13 +55,15 @@ function requestContext({ service = 'openmesh', requestIdHeader = 'x-request-id'
     const traceparent = `00-${traceId}-${randomBytes(8).toString('hex')}-${flags}`;
     ctx.state.requestId = requestId; ctx.state.service = service; ctx.state.traceparent = traceparent;
     ctx.state.outboundHeaders = { [requestIdHeader]: requestId, traceparent };
-    ctx.set(requestIdHeader, requestId); ctx.set('traceparent', traceparent); return next();
+    ctx.set(requestIdHeader, requestId); ctx.set('traceparent', traceparent);
+    return requestStorage.run(ctx.state, () => next());
   };
 }
+function currentRequestContext() { return requestStorage.getStore() || null; }
 function health({ ready = () => true, livePath = '/health/live', readyPath = '/health/ready' } = {}) {
   return async app => {
     app.get(livePath, () => ({ status: 'live' }));
     app.get(readyPath, async ctx => { const available = await ready(); ctx.status = available ? 200 : 503; return { status: available ? 'ready' : 'not-ready' }; });
   };
 }
-module.exports = { jsonBody, requestContext, health };
+module.exports = { jsonBody, requestContext, currentRequestContext, health };

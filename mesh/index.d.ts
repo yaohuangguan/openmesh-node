@@ -12,7 +12,10 @@ export class PeerPool {
   constructor(options?: { peers?: Peer[]; timeout?: number; retries?: number; failureThreshold?: number; cooldown?: number; maxResponseBytes?: number; maxSockets?: number; transport?: (request: TransportRequest) => Promise<TransportResponse> });
   readonly peers: Peer[];
   updatePeers(peers: Peer[]): this; rank(key: string): Peer[];
-  stats(): Array<Peer & { failures: number; attempts: number; circuit: string; probing: boolean }>;
+  stats(): Array<Peer & {
+    failures: number; attempts: number; successes: number; inflight: number; circuit: string; probing: boolean;
+    lastLatencyMs: number | null; ewmaLatencyMs: number | null; lastSuccessAt: number | null; lastFailureAt: number | null;
+  }>;
   request(path: string, options?: PeerOptions): Promise<PeerResponse>;
   json(path: string, options?: PeerOptions): Promise<unknown>;
   broadcast(path: string, options?: PeerOptions & { concurrency?: number }): Promise<Array<{ peer: Peer; status: 'fulfilled'; value: PeerResponse } | { peer: Peer; status: 'rejected'; reason: unknown }>>;

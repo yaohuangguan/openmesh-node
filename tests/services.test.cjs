@@ -124,3 +124,143 @@ test('discovery follows bounded pages without losing instance IDs', async t => {
   try { const members = await client.discover('users'); assert.equal(members.length, 212); assert.deepEqual(members.map(member => member.id), registry.list('users').map(member => member.id)); assert.equal(new Set(members.map(member => member.id)).size, 212); assert.equal(calls, 3); }
   finally { await client.close(); registry.close(); }
 });
+
+
+test('control plane accepts asynchronous registry and config adapters', async t => {
+  const memoryRegistry = new ServiceRegistry({ sweepInterval: 0 }), memoryConfig = new ConfigStore();
+  const registry = {
+    register: async (...args) => memoryRegistry.register(...args),
+    renew: async (...args) => memoryRegistry.renew(...args),
+    deregister: async (...args) => memoryRegistry.deregister(...args),
+    list: async (...args) => memoryRegistry.list(...args),
+    subscribe: (...args) => memoryRegistry.subscribe(...args)
+  };
+  const config = {
+    snapshot: async (...args) => memoryConfig.snapshot(...args),
+    replace: async (...args) => memoryConfig.replace(...args),
+    subscribe: (...args) => memoryConfig.subscribe(...args)
+  };
+  const url = await serve(t, openmesh().register(controlPlane({ token, registry, config })));
+  const client = new ControlClient({ url: url + '/_mesh', token });
+  try {
+    const registration = await client.register('users', { id: 'async-a', url, ttl: 1000 });
+    assert.equal((await client.discover('users'))[0].id, 'async-a');
+    const snapshot = await client.getConfig('users');
+    const updated = await client.setConfig('users', { adapter: 'async' }, { expectedRevision: snapshot.revision, expectedEpoch: snapshot.epoch });
+    assert.equal(updated.values.adapter, 'async');
+    await registration.stop();
+  } finally {
+    await client.close();
+    memoryRegistry.close();
+    memoryConfig.close();
+  }
+});
+
+test('streaming config watch pushes updates without waiting for polling interval', async t => {
+  const app = openmesh().register(controlPlane({ token })), url = await serve(t, app);
+  const client = new ControlClient({ url: url + '/_mesh', token, timeout: 500 });
+  let resolveUpdate;
+  const update = new Promise(resolve => { resolveUpdate = resolve; });
+  const watcher = await client.watchConfig('users', { interval: 10000, reconnectDelay: 50, onUpdate: resolveUpdate });
+  try {
+    const started = Date.now();
+    await client.setConfig('users', { pushed: true }, { expectedRevision: watcher.snapshot.revision, expectedEpoch: watcher.snapshot.epoch });
+    const snapshot = await Promise.race([update, new Promise((_, reject) => setTimeout(() => reject(new Error('stream update timed out')), 1000))]);
+    assert.equal(snapshot.values.pushed, true);
+    assert.ok(Date.now() - started < 1000);
+  } finally {
+    watcher.stop();
+    await client.close();
+  }
+});
+
+test('service watch pushes membership changes and control-plane shutdown closes streams promptly', async t => {
+  const app = openmesh({ shutdownTimeout: 5000 }).register(controlPlane({ token }));
+  const url = await serve(t, app);
+  const client = new ControlClient({ url: url + '/_mesh', token, timeout: 500 });
+  let resolveUpdate;
+  const update = new Promise(resolve => { resolveUpdate = resolve; });
+  const watcher = await client.watchService('users', { reconnectDelay: 50, onUpdate: resolveUpdate });
+  const registration = await client.register('users', { id: 'stream-a', url, ttl: 1000 });
+  try {
+    const instances = await Promise.race([update, new Promise((_, reject) => setTimeout(() => reject(new Error('service stream update timed out')), 1000))]);
+    assert.deepEqual(instances.map(instance => instance.id), ['stream-a']);
+    const started = Date.now();
+    await app.close();
+    assert.ok(Date.now() - started < 1500, 'shutdown should close watch streams before the 5s force timeout');
+  } finally {
+    watcher.stop();
+    await registration.stop().catch(() => {});
+    await client.close().catch(() => {});
+  }
+});
+
+
+test('service watch falls back to polling when an adapter has no subscriptions', async t => {
+  const memory = new ServiceRegistry({ sweepInterval: 0 });
+  const registry = {
+    register: async (...args) => memory.register(...args),
+    renew: async (...args) => memory.renew(...args),
+    deregister: async (...args) => memory.deregister(...args),
+    list: async (...args) => memory.list(...args)
+  };
+  const app = openmesh().register(controlPlane({ token, registry })), url = await serve(t, app);
+  const client = new ControlClient({ url: url + '/_mesh', token, timeout: 500 });
+  let resolveUpdate;
+  const updated = new Promise(resolve => { resolveUpdate = resolve; });
+  const watcher = await client.watchService('users', { interval: 50, reconnectDelay: 50, onUpdate: resolveUpdate });
+  const registration = await client.register('users', { id: 'poll-a', url, ttl: 1000 });
+  try {
+    const instances = await Promise.race([updated, new Promise((_, reject) => setTimeout(() => reject(new Error('poll fallback timed out')), 1000))]);
+    assert.deepEqual(instances.map(instance => instance.id), ['poll-a']);
+    assert.equal(watcher._transport, 'poll');
+  } finally {
+    watcher.stop();
+    await registration.stop();
+    await client.close();
+    memory.close();
+  }
+});
+
+
+test('service snapshots carry monotonic revisions for membership changes', () => {
+  let now = Date.now();
+  const registry = new ServiceRegistry({ now: () => now, sweepInterval: 0 });
+  try {
+    assert.equal(registry.snapshot('users').revision, 0);
+    const a = registry.register('users', 'a', { url: 'http://127.0.0.1:3000', ttl: 1000 });
+    assert.equal(registry.snapshot('users').revision, 1);
+    registry.register('users', 'b', { url: 'http://127.0.0.1:3001', ttl: 1000 });
+    assert.equal(registry.snapshot('users').revision, 2);
+    registry.deregister('users', 'a', a.leaseId);
+    assert.equal(registry.snapshot('users').revision, 3);
+    now += 1001;
+    const expired = registry.snapshot('users');
+    assert.equal(expired.revision, 4);
+    assert.deepEqual(expired.instances, []);
+  } finally { registry.close(); }
+});
+
+test('discovery restarts when membership revision changes between pages', async t => {
+  let calls = 0;
+  const instances = Array.from({ length: 101 }, (_, index) => ({
+    service: 'users', id: 'node-' + String(index).padStart(3, '0'), url: 'http://127.0.0.1:3000',
+    ttl: 30000, expiresAt: Date.now() + 30000, metadata: {}
+  }));
+  const registry = {
+    register() { throw new Error('unused'); }, renew() { throw new Error('unused'); }, deregister() { throw new Error('unused'); },
+    list() { return instances; },
+    snapshot() {
+      calls++;
+      const revision = calls === 2 ? 2 : 1;
+      return { service: 'users', revision, instances };
+    }
+  };
+  const url = await serve(t, openmesh().register(controlPlane({ token, registry })));
+  const client = new ControlClient({ url: url + '/_mesh', token, timeout: 1000 });
+  try {
+    const found = await client.discover('users');
+    assert.equal(found.length, 101);
+    assert.ok(calls >= 4, 'client should restart pagination after a revision mismatch');
+  } finally { await client.close(); }
+});
