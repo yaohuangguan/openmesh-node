@@ -6,8 +6,8 @@ const { tmpdir } = require('node:os');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const node = process.execPath;
+const npmCli = process.env.npm_execpath;
 const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
 const temp = mkdtempSync(path.join(tmpdir(), 'openmesh-package-smoke-'));
 let tarball;
@@ -17,12 +17,21 @@ function run(command, args, options = {}) {
     cwd: options.cwd || root,
     encoding: 'utf8',
     stdio: options.capture ? ['ignore', 'pipe', 'inherit'] : 'inherit',
-    env: process.env
+    env: process.env,
+    shell: options.shell || false
+  });
+}
+
+function runNpm(args, options = {}) {
+  if (npmCli) return run(node, [npmCli, ...args], options);
+  return run(process.platform === 'win32' ? 'npm.cmd' : 'npm', args, {
+    ...options,
+    shell: process.platform === 'win32'
   });
 }
 
 try {
-  const packed = run(npm, ['pack', '--ignore-scripts', '--silent'], { capture: true });
+  const packed = runNpm(['pack', '--ignore-scripts', '--silent'], { capture: true });
   const filename = packed
     .split(/\r?\n/)
     .map(line => line.trim())
@@ -38,7 +47,7 @@ try {
     version: '0.0.0'
   }));
 
-  run(npm, [
+  runNpm([
     'install',
     '--ignore-scripts',
     '--no-audit',
