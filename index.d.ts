@@ -31,6 +31,7 @@ export class OpenMesh {
   get: RouteMethod; head: RouteMethod; post: RouteMethod; put: RouteMethod; patch: RouteMethod; delete: RouteMethod; options: RouteMethod; trace: RouteMethod; all: RouteMethod;
   register(plugin: Plugin, options?: PluginOptions): this;
   decorate(name: string, value: unknown): this; hasPlugin(name: string): boolean;
+  onShutdown(hook: (app: OpenMesh) => void | Promise<void>): this;
   onClose(hook: (app: OpenMesh) => void | Promise<void>): this;
   onListen(hook: (app: OpenMesh, address: AddressInfo | string | null) => void | Promise<void>): this;
   setErrorHandler(handler: (error: Error, ctx: Context) => unknown | Promise<unknown>): this;

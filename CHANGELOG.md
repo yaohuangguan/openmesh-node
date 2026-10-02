@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 (unreleased)
+
+- Add pluggable registry and configuration adapter contracts; control-plane stores may now be asynchronous.
+- Add authenticated SSE watches for service membership and configuration.
+- Make `ControlClient.watchConfig()` stream by default with polling compatibility, and add `watchService()`.
+- Add `app.onShutdown()` for pre-drain cleanup of long-lived resources.
+- Make not-found handlers honor plugin prefix/scope encapsulation.
+- Document the intended Go boundary: standalone control plane first, not per-request Go-to-JavaScript bridging.
+
 ## 0.2.0
 
 - Make all documentation, examples, and release material English-first.

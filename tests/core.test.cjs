@@ -121,3 +121,43 @@ test('shutdown timeout destroys an unresponsive connection and still cleans reso
   await started; await app.close();
   assert.equal(await pending, true); assert.equal(closed, true); assert.equal(app.phase, 'closed');
 });
+
+
+test('scoped not-found handlers preserve plugin encapsulation and middleware', async t => {
+  const app = openmesh();
+  app.setNotFoundHandler(ctx => ({ scope: 'root', private: ctx.app.onlyHere === undefined }));
+  app.register(scope => {
+    scope.decorate('onlyHere', 'plugin');
+    scope.use(async (ctx, next) => { ctx.set('x-plugin-scope', 'yes'); await next(); });
+    scope.setNotFoundHandler(ctx => ({ scope: 'api', private: ctx.app.onlyHere }));
+  }, { prefix: '/api' });
+  const url = await serve(t, app);
+  const api = await request(url, '/api/missing');
+  assert.deepEqual(api.json(), { scope: 'api', private: 'plugin' });
+  assert.equal(api.headers['x-plugin-scope'], 'yes');
+  const root = await request(url, '/outside');
+  assert.deepEqual(root.json(), { scope: 'root', private: true });
+  assert.equal(root.headers['x-plugin-scope'], undefined);
+});
+
+test('shutdown hooks run before listener drain and close hooks', async () => {
+  const events = [], app = openmesh();
+  app.onShutdown(() => events.push('shutdown'));
+  app.onClose(() => events.push('close'));
+  await app.listen({ port: 0 });
+  await app.close();
+  assert.deepEqual(events, ['shutdown', 'close']);
+});
+
+
+test('shutdown hook failures do not skip listener drain or close hooks', async () => {
+  let closed = false;
+  const app = openmesh();
+  app.onShutdown(() => { throw new Error('shutdown failed'); });
+  app.onClose(() => { closed = true; });
+  await app.listen({ port: 0 });
+  await assert.rejects(app.close(), /Shutdown hooks failed/);
+  assert.equal(app.server.listening, false);
+  assert.equal(closed, true);
+  assert.equal(app.phase, 'closed');
+});
