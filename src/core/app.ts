@@ -313,7 +313,7 @@ export class OpenMesh {
   get server(): http.Server | null { return this._root._server; }
   get phase(): string { return this._root._phase; }
   get prefix(): string { return this._prefix; }
-  get version(): string { return '0.2.0'; }
+  get version(): string { return '0.4.0'; }
 
   _emit(event: AppEvent): void {
     const observer = this._root._observer;

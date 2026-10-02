@@ -1,26 +1,69 @@
 name: Publish npm
+
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
+
 permissions:
   contents: read
   id-token: write
+
 concurrency:
-  group: npm-publish
+  group: npm-publish-${{ github.ref }}
   cancel-in-progress: false
+
 jobs:
   publish:
-    if: github.repository == 'yaohuangguan/openmesh-node' && github.ref == 'refs/heads/master'
+    if: github.repository == 'yaohuangguan/openmesh-node' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-      - run: npm install --global npm@11.15.0 --ignore-scripts
+          package-manager-cache: false
+
+      - name: Use OIDC-capable npm
+        run: npm install --global npm@11.19.0 --ignore-scripts
+
+      - name: Verify release tag and registry state
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
+            echo "Release tag $GITHUB_REF_NAME does not match package version v$VERSION"
+            exit 1
+          fi
+          if npm view "openmesh-node@$VERSION" version --json >/dev/null 2>&1; then
+            echo "openmesh-node@$VERSION is already published"
+            exit 1
+          fi
+
       - run: npm ci --ignore-scripts
       - run: npm test
       - run: npm run test:types
+      - run: npm run test:package
+      - run: npm run demo:cluster
       - run: npm run demo:services
       - run: npm pack --dry-run
-      - run: npm publish --access public
+
+      - name: Publish with npm trusted publishing
+        run: npm publish --access public --provenance --ignore-scripts
+
+      - name: Verify published package
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          for attempt in 1 2 3 4 5; do
+            if RESULT="$(npm view "openmesh-node@$VERSION" version dist.integrity --json 2>/dev/null)"; then
+              echo "$RESULT"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Published package was not visible from the registry"
+          exit 1
