@@ -29,6 +29,35 @@ test('rendezvous selection is stable across order and only moves removed-owner k
   pool.updatePeers(pool.peers.reverse()); assert.deepEqual(keys.map(k => pool.rank(k)[0].id), before);
   pool.updatePeers(peers); keys.forEach((key, i) => { if (before[i] !== 'c') assert.equal(pool.rank(key)[0].id, before[i]); }); pool.close();
 });
+test('unkeyed p2c avoids a busy peer while keyed routing stays rendezvous-stable', async () => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const pool = new PeerPool({
+    peers,
+    transport: async ({ peer, url }) => {
+      if (url.pathname === '/hold') await gate;
+      return ok({ peer: peer.id });
+    }
+  });
+
+  let key = '0';
+  while (pool.rank(key)[0].id !== 'a') key = String(Number(key) + 1);
+  const held = pool.request('/hold', { key });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(pool.stats().find(peer => peer.id === 'a').inflight, 1);
+
+  const adaptive = await pool.request('/fast');
+  assert.equal(adaptive.peer.id, 'b');
+
+  const sticky = await pool.request('/fast', { key });
+  assert.equal(sticky.peer.id, 'a');
+
+  release();
+  await held;
+  pool.close();
+  assert.throws(() => new PeerPool({ peers, selection: 'invalid' }), /selection/);
+});
+
 test('POST is not retried implicitly; explicit unsafe retry requires idempotency key', async () => {
   let calls = 0; const pool = new PeerPool({ peers, transport: async () => { calls++; throw new Error('offline'); } });
   await assert.rejects(pool.request('/', { method: 'POST', body: { job: 1 } })); assert.equal(calls, 1);

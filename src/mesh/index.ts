@@ -7,6 +7,8 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE']);
 
 export interface Peer { id: string; url: string; }
 
+export type PeerSelectionStrategy = 'rendezvous' | 'p2c';
+
 export interface PeerOptions {
   method?: string;
   key?: string;
@@ -141,6 +143,7 @@ export class PeerPool {
   failureThreshold: number;
   cooldown: number;
   maxResponseBytes: number;
+  selection: PeerSelectionStrategy;
   private _http: http.Agent;
   private _https: https.Agent;
   private _transport: Transport;
@@ -160,6 +163,7 @@ export class PeerPool {
     cooldown?: number;
     maxResponseBytes?: number;
     maxSockets?: number;
+    selection?: PeerSelectionStrategy;
     transport?: Transport;
   } = {}) {
     this.timeout = options.timeout ?? 2000;
@@ -167,11 +171,13 @@ export class PeerPool {
     this.failureThreshold = options.failureThreshold ?? 3;
     this.cooldown = options.cooldown ?? 10000;
     this.maxResponseBytes = options.maxResponseBytes ?? 1024 * 1024;
+    this.selection = options.selection ?? 'p2c';
 
     for (const name of ['timeout', 'failureThreshold', 'cooldown', 'maxResponseBytes'] as const) {
       if (!Number.isSafeInteger(this[name]) || this[name] <= 0) throw new TypeError(name + ' must be a positive integer');
     }
     if (!Number.isSafeInteger(this.retries) || this.retries < 0) throw new TypeError('Retries must be a nonnegative integer');
+    if (!['rendezvous', 'p2c'].includes(this.selection)) throw new TypeError('selection must be rendezvous or p2c');
 
     const maxSockets = options.maxSockets ?? 32;
     if (!Number.isSafeInteger(maxSockets) || maxSockets <= 0) throw new TypeError('maxSockets must be a positive integer');
@@ -229,6 +235,32 @@ export class PeerPool {
       this._cache.set(normalized, ranked);
     }
     return ranked.map(peer => ({ ...peer }));
+  }
+
+  private _compareLoad(a: Peer, b: Peer, now: number): number {
+    const left = this._states.get(a.id);
+    const right = this._states.get(b.id);
+    if (!left || !right) return 0;
+
+    const leftBlocked = left.unavailableUntil > now || left.probing ? 1 : 0;
+    const rightBlocked = right.unavailableUntil > now || right.probing ? 1 : 0;
+    if (leftBlocked !== rightBlocked) return leftBlocked - rightBlocked;
+    if (left.failures !== right.failures) return left.failures - right.failures;
+    if (left.inflight !== right.inflight) return left.inflight - right.inflight;
+
+    const leftLatency = left.ewmaLatencyMs ?? 0;
+    const rightLatency = right.ewmaLatencyMs ?? 0;
+    return leftLatency - rightLatency;
+  }
+
+  private _candidates(key?: string): Peer[] {
+    const ranked = this.rank(key ?? String(this._counter++));
+    if (key !== undefined || this.selection === 'rendezvous' || ranked.length < 2) return ranked;
+
+    if (this._compareLoad(ranked[1]!, ranked[0]!, Date.now()) < 0) {
+      [ranked[0], ranked[1]] = [ranked[1]!, ranked[0]!];
+    }
+    return ranked;
   }
 
   stats(): PeerStats[] {
@@ -356,7 +388,7 @@ export class PeerPool {
     if (options.idempotencyKey) headers['idempotency-key'] = options.idempotencyKey;
 
     const attempts = SAFE_METHODS.has(method) || options.retryUnsafe ? retries + 1 : 1;
-    const candidates = onlyPeer ? [onlyPeer] : this.rank(options.key ?? String(this._counter++));
+    const candidates = onlyPeer ? [onlyPeer] : this._candidates(options.key);
     if (!candidates.length) throw new PeerError('No peers available', 'NO_PEERS');
     for (const peer of candidates) targetURL(peer, path);
 

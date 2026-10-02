@@ -35,6 +35,20 @@ export type {
   ConfigSnapshot
 };
 
+export const CONTROL_PROTOCOL = 'openmesh-control' as const;
+export const CONTROL_PROTOCOL_VERSION = 1;
+
+export interface ControlPlaneInfo {
+  protocol: typeof CONTROL_PROTOCOL;
+  version: number;
+  capabilities: {
+    serviceWatch: boolean;
+    configWatch: boolean;
+    membershipRevision: boolean;
+    configCAS: boolean;
+  };
+}
+
 export interface RegistryAdapterLike {
   register(service: string, id: string, options: RegistrationInput): MaybePromise<Lease>;
   renew(service: string, id: string, leaseId: string): MaybePromise<Lease>;
@@ -231,6 +245,17 @@ export function controlPlane({ token, registry, config, prefix = '/_mesh' }: {
         return next();
       });
       scope.use(jsonBody({ limit: 300000 }));
+
+      scope.get('/meta', () => ({
+        protocol: CONTROL_PROTOCOL,
+        version: CONTROL_PROTOCOL_VERSION,
+        capabilities: {
+          serviceWatch: typeof activeRegistry.subscribe === 'function',
+          configWatch: typeof activeConfig.subscribe === 'function',
+          membershipRevision: typeof activeRegistry.snapshot === 'function',
+          configCAS: true
+        }
+      } satisfies ControlPlaneInfo));
 
       const path = '/services/:service/instances/:id';
       scope.post(path, async ctx => {
@@ -725,6 +750,7 @@ export class ControlClient {
   _registrations = new Set<Registration>();
   _watchers = new Set<ConfigWatcher>();
   _serviceWatchers = new Set<ServiceWatcher>();
+  private _info: Readonly<ControlPlaneInfo> | null = null;
   private _closing = false;
   private _closePromise: Promise<void> | null = null;
 
@@ -739,6 +765,35 @@ export class ControlClient {
     });
     this._url = url.replace(/\/$/, '');
     this._token = token;
+  }
+
+  async info({ refresh = false, signal }: {
+    refresh?: boolean;
+    signal?: AbortSignal;
+  } = {}): Promise<Readonly<ControlPlaneInfo>> {
+    if (this._closing) throw new Error('Control client is closing');
+    if (this._info && !refresh) return this._info;
+
+    const info = await this._call<ControlPlaneInfo>('GET', '/meta', undefined, signal);
+    if (
+      !info ||
+      info.protocol !== CONTROL_PROTOCOL ||
+      info.version !== CONTROL_PROTOCOL_VERSION ||
+      !info.capabilities ||
+      typeof info.capabilities.serviceWatch !== 'boolean' ||
+      typeof info.capabilities.configWatch !== 'boolean' ||
+      typeof info.capabilities.membershipRevision !== 'boolean' ||
+      typeof info.capabilities.configCAS !== 'boolean'
+    ) {
+      throw new Error('Unsupported OpenMesh control-plane protocol');
+    }
+
+    this._info = Object.freeze({
+      protocol: info.protocol,
+      version: info.version,
+      capabilities: Object.freeze({ ...info.capabilities })
+    });
+    return this._info;
   }
 
   _instancePath(service: string, id: string): string {
@@ -904,7 +959,7 @@ export function serviceRegistration({ client, service, id, url, ttl = 30000, met
         onError
       });
     });
-    app.onClose(() => app.registration?.stop());
+    app.onShutdown(() => app.registration?.stop());
   }, { name: 'service-registration', global: true });
 }
 
