@@ -58,6 +58,80 @@ test('unkeyed p2c avoids a busy peer while keyed routing stays rendezvous-stable
   assert.throws(() => new PeerPool({ peers, selection: 'invalid' }), /selection/);
 });
 
+test('bounded admission queues FIFO and rejects overload without starting transport', async () => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const started = [];
+  const pool = new PeerPool({
+    peers: [peers[0]],
+    maxInflight: 1,
+    maxQueue: 1,
+    retries: 0,
+    transport: async ({ url }) => {
+      started.push(url.pathname);
+      if (url.pathname === '/first') await gate;
+      return ok({ path: url.pathname });
+    }
+  });
+
+  const first = pool.request('/first');
+  await new Promise(resolve => setImmediate(resolve));
+  const second = pool.request('/second');
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.deepEqual(pool.poolStats(), {
+    inflight: 1,
+    queued: 1,
+    overloadRejections: 0,
+    maxInflight: 1,
+    maxQueue: 1
+  });
+  await assert.rejects(pool.request('/third'), error => error instanceof PeerError && error.code === 'POOL_OVERLOADED');
+  assert.deepEqual(started, ['/first']);
+  assert.equal(pool.poolStats().overloadRejections, 1);
+
+  release();
+  await first;
+  await second;
+  assert.deepEqual(started, ['/first', '/second']);
+  assert.equal(pool.poolStats().inflight, 0);
+  assert.equal(pool.poolStats().queued, 0);
+  pool.close();
+
+  assert.throws(() => new PeerPool({ maxInflight: 0 }), /maxInflight/);
+  assert.throws(() => new PeerPool({ maxQueue: -1 }), /maxQueue/);
+});
+
+test('admission queue time counts against the request deadline', async () => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const started = [];
+  const pool = new PeerPool({
+    peers: [peers[0]],
+    maxInflight: 1,
+    maxQueue: 1,
+    retries: 0,
+    transport: async ({ url }) => {
+      started.push(url.pathname);
+      if (url.pathname === '/hold') await gate;
+      return ok({ path: url.pathname });
+    }
+  });
+
+  const held = pool.request('/hold', { timeout: 1000 });
+  await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(
+    pool.request('/queued', { timeout: 20 }),
+    error => error instanceof PeerError && error.code === 'DEADLINE_EXCEEDED'
+  );
+  assert.deepEqual(started, ['/hold']);
+  assert.equal(pool.poolStats().queued, 0);
+
+  release();
+  await held;
+  pool.close();
+});
+
 test('POST is not retried implicitly; explicit unsafe retry requires idempotency key', async () => {
   let calls = 0; const pool = new PeerPool({ peers, transport: async () => { calls++; throw new Error('offline'); } });
   await assert.rejects(pool.request('/', { method: 'POST', body: { job: 1 } })); assert.equal(calls, 1);
@@ -95,9 +169,27 @@ test('broadcast bounds concurrency and reports failures separately', async () =>
   const pool = new PeerPool({ peers: Array.from({ length: 6 }, (_, i) => ({ id: String(i), url: 'http://127.0.0.1:' + (i + 1) })), transport: async ({ peer }) => { active++; max = Math.max(max, active); await new Promise(resolve => setTimeout(resolve, 3)); active--; if (peer.id === '2') throw new Error('failed'); return ok(peer.id); } });
   const results = await pool.broadcast('/', { concurrency: 2 }); assert.equal(max, 2); assert.equal(results.filter(x => x.status === 'rejected').length, 1); pool.close();
 });
-test('closing pool cancels requests and rejects new calls', async () => {
-  const pool = new PeerPool({ peers: [peers[0]], transport: () => new Promise(() => {}) }), pending = pool.request('/'); pool.close();
-  await assert.rejects(pending, error => error.code === 'POOL_CLOSED'); await assert.rejects(pool.request('/'), error => error.code === 'POOL_CLOSED'); pool.close();
+test('closing pool cancels admitted and queued requests and rejects new calls', async () => {
+  const pool = new PeerPool({
+    peers: [peers[0]],
+    maxInflight: 1,
+    maxQueue: 1,
+    transport: () => new Promise(() => {})
+  });
+  const admitted = pool.request('/admitted');
+  await new Promise(resolve => setImmediate(resolve));
+  const queued = pool.request('/queued');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(pool.poolStats().inflight, 1);
+  assert.equal(pool.poolStats().queued, 1);
+
+  pool.close();
+  await assert.rejects(admitted, error => error.code === 'POOL_CLOSED');
+  await assert.rejects(queued, error => error.code === 'POOL_CLOSED');
+  await assert.rejects(pool.request('/new'), error => error.code === 'POOL_CLOSED');
+  assert.equal(pool.poolStats().inflight, 0);
+  assert.equal(pool.poolStats().queued, 0);
+  pool.close();
 });
 
 test('stopping discovery ignores a pending provider result', async () => {

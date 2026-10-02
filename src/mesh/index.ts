@@ -69,6 +69,21 @@ interface DiscoveryWatcher {
   stopped: boolean;
 }
 
+interface AdmissionWaiter {
+  signal: AbortSignal;
+  resolve: (release: () => void) => void;
+  reject: (error: unknown) => void;
+  abort: () => void;
+}
+
+export interface PeerPoolStats {
+  inflight: number;
+  queued: number;
+  overloadRejections: number;
+  maxInflight: number;
+  maxQueue: number;
+}
+
 export type Transport = (request: TransportRequest) => Promise<TransportResponse>;
 
 export class PeerError extends Error {
@@ -143,6 +158,8 @@ export class PeerPool {
   failureThreshold: number;
   cooldown: number;
   maxResponseBytes: number;
+  maxInflight: number;
+  maxQueue: number;
   selection: PeerSelectionStrategy;
   private _http: http.Agent;
   private _https: https.Agent;
@@ -151,6 +168,9 @@ export class PeerPool {
   private _peers: Readonly<Peer>[] = [];
   private _cache = new Map<string, Readonly<Peer>[]>();
   private _active = new Set<AbortController>();
+  private _admitted = 0;
+  private _queue: AdmissionWaiter[] = [];
+  private _overloadRejections = 0;
   private _counter = 0;
   private _closed = false;
   private _watch: DiscoveryWatcher | null = null;
@@ -163,6 +183,8 @@ export class PeerPool {
     cooldown?: number;
     maxResponseBytes?: number;
     maxSockets?: number;
+    maxInflight?: number;
+    maxQueue?: number;
     selection?: PeerSelectionStrategy;
     transport?: Transport;
   } = {}) {
@@ -171,12 +193,15 @@ export class PeerPool {
     this.failureThreshold = options.failureThreshold ?? 3;
     this.cooldown = options.cooldown ?? 10000;
     this.maxResponseBytes = options.maxResponseBytes ?? 1024 * 1024;
+    this.maxInflight = options.maxInflight ?? 256;
+    this.maxQueue = options.maxQueue ?? 1024;
     this.selection = options.selection ?? 'p2c';
 
-    for (const name of ['timeout', 'failureThreshold', 'cooldown', 'maxResponseBytes'] as const) {
+    for (const name of ['timeout', 'failureThreshold', 'cooldown', 'maxResponseBytes', 'maxInflight'] as const) {
       if (!Number.isSafeInteger(this[name]) || this[name] <= 0) throw new TypeError(name + ' must be a positive integer');
     }
     if (!Number.isSafeInteger(this.retries) || this.retries < 0) throw new TypeError('Retries must be a nonnegative integer');
+    if (!Number.isSafeInteger(this.maxQueue) || this.maxQueue < 0) throw new TypeError('maxQueue must be a nonnegative integer');
     if (!['rendezvous', 'p2c'].includes(this.selection)) throw new TypeError('selection must be rendezvous or p2c');
 
     const maxSockets = options.maxSockets ?? 32;
@@ -280,6 +305,60 @@ export class PeerPool {
         circuit: state.unavailableUntil > now ? 'open' : state.failures >= this.failureThreshold ? 'half-open' : 'closed',
         probing: state.probing
       };
+    });
+  }
+
+  poolStats(): PeerPoolStats {
+    return {
+      inflight: this._admitted,
+      queued: this._queue.length,
+      overloadRejections: this._overloadRejections,
+      maxInflight: this.maxInflight,
+      maxQueue: this.maxQueue
+    };
+  }
+
+  private _releaseAdmission(): void {
+    while (this._queue.length) {
+      const waiter = this._queue.shift()!;
+      waiter.signal.removeEventListener('abort', waiter.abort);
+      if (waiter.signal.aborted) {
+        waiter.reject(waiter.signal.reason);
+        continue;
+      }
+      waiter.resolve(() => this._releaseAdmission());
+      return;
+    }
+    this._admitted = Math.max(0, this._admitted - 1);
+  }
+
+  private _admit(signal: AbortSignal): Promise<() => void> {
+    if (this._closed) return Promise.reject(new PeerError('Peer pool is closed', 'POOL_CLOSED'));
+    if (signal.aborted) return Promise.reject(signal.reason);
+
+    if (this._admitted < this.maxInflight) {
+      this._admitted++;
+      return Promise.resolve(() => this._releaseAdmission());
+    }
+
+    if (this._queue.length >= this.maxQueue) {
+      this._overloadRejections++;
+      return Promise.reject(new PeerError('Peer pool admission queue is full', 'POOL_OVERLOADED'));
+    }
+
+    return new Promise((resolve, reject) => {
+      const waiter: AdmissionWaiter = {
+        signal,
+        resolve,
+        reject,
+        abort: () => {
+          const index = this._queue.indexOf(waiter);
+          if (index >= 0) this._queue.splice(index, 1);
+          reject(signal.reason);
+        }
+      };
+      signal.addEventListener('abort', waiter.abort, { once: true });
+      this._queue.push(waiter);
     });
   }
 
@@ -396,10 +475,13 @@ export class PeerPool {
     this._active.add(controller);
     const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
     const timer = setTimeout(() => controller.abort(new PeerError('Peer request deadline exceeded', 'DEADLINE_EXCEEDED')), timeout);
+    let releaseAdmission: (() => void) | null = null;
     let count = 0;
     let lastError: unknown;
 
     try {
+      if (signal.aborted) throw signal.reason;
+      releaseAdmission = await this._admit(signal);
       if (signal.aborted) throw signal.reason;
       for (const peer of candidates) {
         const state = this._claim(peer);
@@ -429,6 +511,7 @@ export class PeerPool {
       }
       throw lastError || new PeerError('All peer circuits are open', 'NO_HEALTHY_PEERS');
     } finally {
+      releaseAdmission?.();
       clearTimeout(timer);
       this._active.delete(controller);
     }
