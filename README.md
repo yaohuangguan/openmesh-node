@@ -17,7 +17,7 @@ Version **0.2.0 is experimental**. The performance goal is a substantial, reprod
 - Native HTTP routing, async handlers, streams, scoped plugins, route-schema compiler hooks, and graceful shutdown.
 - Node/Express middleware and complete Express application mounts.
 - Fastify plugins inside an actual, optionally installed Fastify 5 instance.
-- HTTP peer routing with keyed rendezvous affinity, load-aware P2C selection for unkeyed traffic, deadlines, retries, circuits, and bounded broadcasts.
+- HTTP peer routing with keyed rendezvous affinity, load-aware P2C selection, bounded admission/backpressure, deadlines, retries, circuits, and bounded broadcasts.
 - Authenticated control-plane API with protocol/capability discovery, expiring registration leases, automatic heartbeats, and pre-drain deregistration.
 - Pluggable registry/config adapters with in-memory defaults and async adapter support.
 - Push-based SSE watches for service membership and configuration, with polling compatibility.

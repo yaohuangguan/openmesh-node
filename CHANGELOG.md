@@ -13,6 +13,7 @@
 - Add authenticated `/_mesh/meta` protocol/capability discovery and `ControlClient.info()` for explicit control-plane compatibility checks.
 - Remove service registrations in the pre-drain shutdown phase so discovery stops sending new work to draining instances.
 - Add default power-of-two-choice load-aware selection for unkeyed peer traffic while preserving rendezvous affinity for keyed requests.
+- Add bounded peer-pool admission with FIFO queueing, deadline-aware waits, overload rejection, and pool-level pressure telemetry.
 
 ## 0.2.0
 

@@ -108,7 +108,7 @@ The next 0.3 work should build on these boundaries rather than enlarge the core 
 2. OpenTelemetry context and exporter integration;
 3. request-path profiling and regression budgets;
 4. streaming peer responses and richer transport metrics;
-5. peer backpressure and bounded admission controls;
+5. per-service bulkheads and adaptive concurrency experiments;
 6. protocol-level authentication/authorization beyond one shared bearer token;
 7. an optional standalone Go control plane implementing the same protocol.
 
@@ -123,4 +123,4 @@ SSE watch events carry `id` values. Config events use `<epoch>:<revision>` and s
 
 ## Peer transport telemetry
 
-`PeerPool.stats()` now reports successes, in-flight requests, last/EWMA latency and last success/failure timestamps in addition to attempts and circuit state. Caller cancellation releases in-flight accounting without incrementing peer failures. Unkeyed traffic uses a power-of-two-choice (`p2c`) decision over the first two rendezvous candidates, preferring a candidate with a healthier circuit, fewer recent failures, less in-flight work, and then lower EWMA latency. Requests with an explicit key always keep pure rendezvous ordering so affinity remains stable. These metrics are deliberately transport-local and remain suitable for OpenTelemetry export.
+`PeerPool.stats()` now reports successes, in-flight requests, last/EWMA latency and last success/failure timestamps in addition to attempts and circuit state. Caller cancellation releases in-flight accounting without incrementing peer failures. Unkeyed traffic uses a power-of-two-choice (`p2c`) decision over the first two rendezvous candidates, preferring a candidate with a healthier circuit, fewer recent failures, less in-flight work, and then lower EWMA latency. Requests with an explicit key always keep pure rendezvous ordering so affinity remains stable. Pool-wide admission is separately bounded: at most 256 requests are admitted by default, up to 1024 wait FIFO, queue wait consumes the same request deadline, and a full queue fails immediately with `POOL_OVERLOADED`. `PeerPool.poolStats()` exposes this pressure without mixing admission rejection into peer circuit health. These metrics are deliberately transport-local and remain suitable for OpenTelemetry export.

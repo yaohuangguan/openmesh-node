@@ -10,6 +10,7 @@ const pool = new PeerPool({
   peers: [{ id: 'a', url: 'https://users-a.example.com' }],
   timeout: 2000, retries: 1, failureThreshold: 3, cooldown: 10000,
   maxResponseBytes: 1024 * 1024, maxSockets: 32,
+  maxInflight: 256, maxQueue: 1024,
   selection: 'p2c'
 });
 const result = await pool.request('/users/42', { key: '42' });
@@ -26,15 +27,16 @@ pool.close();
 | Retry | Distinct available peers; at most `retries + 1` attempts |
 | Retriable failure | Transport error, oversized/aborted response, or HTTP 5xx |
 | HTTP 4xx | Returned as a response; not retried |
-| Deadline | One total time budget across connection, queuing, response, and retries |
+| Admission | At most `maxInflight` requests execute; up to `maxQueue` wait FIFO; a full queue fails with `POOL_OVERLOADED` |
+| Deadline | One total time budget across admission queueing, connection, response, and retries |
 | Circuit | Consecutive failures open one peer; cooldown allows a single half-open probe |
 | Caller cancellation | Propagates through `AbortSignal`; does not count as peer failure |
 | Transport | Keep-alive HTTP/HTTPS; 32 sockets per origin by default, 256 total per protocol agent |
-| Response | Buffered, bounded bytes; no streaming client API in 0.1 |
+| Response | Buffered and bounded by `maxResponseBytes`; streaming peer responses are not yet exposed |
 
-`pool.rank(key)` always returns the raw rendezvous order and is unaffected by adaptive selection. `pool.stats()` returns failures, attempts, successes, in-flight requests, latency telemetry, circuit state and probe status. Circuit state is local to this process; it is not cluster-wide health consensus. An expired request deadline counts as a failed peer attempt. The deadline does not encompass asynchronous service discovery, which is run separately.
+`pool.rank(key)` always returns the raw rendezvous order and is unaffected by adaptive selection. `pool.stats()` returns per-peer failures, attempts, successes, in-flight requests, latency telemetry, circuit state and probe status. `pool.poolStats()` returns pool-wide admitted/queued counts, configured limits, and overload rejections. Circuit state is local to this process; it is not cluster-wide health consensus. An expired request deadline during an actual peer attempt counts as a failed peer attempt; timing out while still waiting for admission does not touch peer circuit state. The deadline does not encompass asynchronous service discovery, which is run separately.
 
-The built-in client returns `PeerResponse` with `peer`, `statusCode`, `headers`, `body`, `.text()` and `.json()`. `pool.json()` is a convenience; use `request()` when application handling depends on the HTTP status. `PeerError.code` identifies errors such as `NO_PEERS`, `NO_HEALTHY_PEERS`, `REMOTE_HTTP_ERROR`, `DEADLINE_EXCEEDED`, `RESPONSE_TOO_LARGE`, and `POOL_CLOSED`. Native socket errors retain their Node codes.
+The built-in client returns `PeerResponse` with `peer`, `statusCode`, `headers`, `body`, `.text()` and `.json()`. `pool.json()` is a convenience; use `request()` when application handling depends on the HTTP status. `PeerError.code` identifies errors such as `NO_PEERS`, `NO_HEALTHY_PEERS`, `POOL_OVERLOADED`, `REMOTE_HTTP_ERROR`, `DEADLINE_EXCEEDED`, `RESPONSE_TOO_LARGE`, and `POOL_CLOSED`. Native socket errors retain their Node codes.
 
 ## Retry semantics
 
