@@ -11,6 +11,7 @@
 - Add zero-dependency structured `PeerPool` lifecycle events for pressure, attempts, success, failure, cancellation, and concurrency changes.
 - Add opt-in post-header `idleTimeout` for SSE/LLM peer streams with explicit `STREAM_IDLE_TIMEOUT` failures and correct admission cleanup.
 - Add scoped control-plane credentials with action permissions plus optional service/namespace resource restrictions while preserving the legacy full-access token mode.
+- Add `openmesh-node/otel`, a dependency-free OpenTelemetry-compatible metrics bridge for app and peer lifecycle events with bounded default attributes.
 
 ## 0.3.0 (unreleased)
 

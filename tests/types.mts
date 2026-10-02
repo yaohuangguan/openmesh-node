@@ -2,6 +2,7 @@ import openmesh, { definePlugin, HttpError, type AppEvent, type Context } from '
 import { jsonBody, requestContext, health } from 'openmesh-node/plugins';
 import { PeerPool, type PeerPoolEvent, type PeerPoolStats, type PeerSelectionStrategy } from 'openmesh-node/mesh';
 import { ControlClient, controlPlane, serviceRegistration, ConfigStore, ServiceRegistry, type ControlCredential, type ControlPlaneInfo } from 'openmesh-node/services';
+import { createOpenTelemetryObservers, type OpenTelemetryMeter } from 'openmesh-node/otel';
 const app = openmesh({ onEvent: (event: AppEvent) => { void event.type; } });
 app.use(jsonBody()).use(requestContext()).register(health());
 app.get('/users/:id', (ctx: Context) => ({ id: ctx.params.id }));
@@ -49,3 +50,11 @@ schemaApp
   .setSerializerCompiler(() => body => JSON.stringify(body))
   .use(jsonBody({ prototypeAction: 'remove' }))
   .post('/schema', { schema: { body: { type: 'object' }, response: { '2xx': { type: 'object' } } } }, ctx => ctx.requestBody);
+
+const telemetryMeter: OpenTelemetryMeter = {
+  createCounter: () => ({ add: () => {} }),
+  createHistogram: () => ({ record: () => {} })
+};
+const telemetryObservers = createOpenTelemetryObservers({ meter: telemetryMeter, attributes: { service: 'users' } });
+telemetryObservers.onAppEvent({ type: 'server.closing', at: Date.now() });
+telemetryObservers.onPeerEvent({ type: 'admission.rejected', at: Date.now(), inflight: 1, queued: 2 });

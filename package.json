@@ -53,6 +53,16 @@
         "default": "./dist/cjs/services/index.js"
       }
     },
+    "./otel": {
+      "import": {
+        "types": "./dist/types/otel/index.d.mts",
+        "default": "./dist/esm/otel/index.js"
+      },
+      "require": {
+        "types": "./dist/types/otel/index.d.ts",
+        "default": "./dist/cjs/otel/index.js"
+      }
+    },
     "./package.json": "./package.json"
   },
   "files": [

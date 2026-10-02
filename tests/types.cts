@@ -2,6 +2,7 @@ import openmesh = require('openmesh-node');
 import plugins = require('openmesh-node/plugins');
 import mesh = require('openmesh-node/mesh');
 import services = require('openmesh-node/services');
+import otel = require('openmesh-node/otel');
 const app = openmesh();
 app.use(plugins.jsonBody());
 app.get('/', (ctx: openmesh.Context) => ({ method: ctx.method }));
@@ -24,3 +25,11 @@ const schemaApp = openmesh({ serverLimits: { maxHeadersCount: 100 } });
 schemaApp.setValidatorCompiler(() => () => true).setSerializerCompiler(() => body => JSON.stringify(body));
 schemaApp.use(plugins.jsonBody({ prototypeAction: 'error' }));
 schemaApp.post('/schema', { schema: { body: {}, response: { 200: {} } } }, ctx => ctx.requestBody);
+
+const telemetry = otel.createOpenTelemetryObservers({
+  meter: {
+    createCounter: () => ({ add: () => {} }),
+    createHistogram: () => ({ record: () => {} })
+  }
+});
+telemetry.onAppEvent({ type: 'server.closed', at: Date.now() });
