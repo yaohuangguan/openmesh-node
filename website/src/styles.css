@@ -1457,11 +1457,22 @@ footer > span {
     gap: 28px;
   }
 
+  .hero-copy {
+    width: 100%;
+    min-width: 0;
+  }
+
   .hero h1 {
+    width: 100%;
     max-width: 100%;
-    font-size: clamp(46px, 13vw, 58px);
-    line-height: 0.94;
-    letter-spacing: -0.065em;
+    font-size: 40px;
+    line-height: 0.96;
+    letter-spacing: -0.055em;
+    overflow-wrap: normal;
+  }
+
+  .hero h1 span {
+    max-width: 100%;
   }
 
   .hero-subtitle {
