@@ -1,0 +1,16 @@
+{
+  "name": "OpenMesh for Node.js",
+  "short_name": "OpenMesh",
+  "description": "TypeScript-first Node.js service runtime and application-native service mesh.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#05070a",
+  "theme_color": "#05070a",
+  "icons": [
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+# OpenMesh for Node.js
+
+> OpenMesh (openmesh-node) is an open-source TypeScript-first Node.js service runtime. Start with native HTTP APIs and grow into an application-native service mesh with discovery, traffic policy, bounded backpressure, retries, circuit breaking, workload identity, mTLS and OpenTelemetry-compatible metrics.
+
+Current release: 0.5.0
+Runtime: Node.js >= 22
+License: MIT
+npm: https://www.npmjs.com/package/openmesh-node
+Source: https://github.com/yaohuangguan/openmesh-node
+
+## Canonical pages
+
+- Homepage: https://openmesh-node.vercel.app/
+- Documentation: https://openmesh-node.vercel.app/docs/
+- Technical guides: https://openmesh-node.vercel.app/guides/
+- Node.js service runtime: https://openmesh-node.vercel.app/guides/nodejs-service-runtime/
+- Application-native service mesh: https://openmesh-node.vercel.app/guides/application-native-service-mesh/
+- Service discovery: https://openmesh-node.vercel.app/guides/service-discovery/
+- Peer routing and resilience: https://openmesh-node.vercel.app/guides/peer-routing/
+- Workload identity and mTLS: https://openmesh-node.vercel.app/guides/workload-identity-mtls/
+
+## Key package entry points
+
+- openmesh-node: HTTP application runtime and application mesh facade
+- openmesh-node/plugins: request/body/health and ecosystem plugins
+- openmesh-node/http: advanced immutable HTTP contracts
+- openmesh-node/db: lifecycle wrapper for existing database/ORM clients
+- openmesh-node/mesh: lower-level peer routing and distributed HTTP
+- openmesh-node/services: registration, discovery and live configuration
+- openmesh-node/services/redis: durable Redis adapters
+- openmesh-node/otel: OpenTelemetry-compatible metrics bridge
+
+## Important boundaries
+
+OpenMesh does not provide Kubernetes networking, transparent traffic interception, certificate issuance, a managed control plane, or a custom database query language. It is independent of Openmesh Network and the RWTH OpenMesh geometry library.

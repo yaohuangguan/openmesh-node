@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <radialGradient id="g1" cx="80%" cy="0%" r="80%"><stop offset="0" stop-color="#16313a"/><stop offset=".65" stop-color="#05070a"/></radialGradient>
+    <linearGradient id="g2" x1="0" x2="1"><stop stop-color="#a8ffca"/><stop offset="1" stop-color="#70e8ff"/></linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#05070a"/>
+  <rect width="1200" height="630" fill="url(#g1)" opacity=".75"/>
+  <g stroke="#7cffb2" stroke-width="3" fill="#07100a">
+    <line x1="84" y1="85" x2="126" y2="62" opacity=".65"/>
+    <line x1="84" y1="85" x2="126" y2="108" opacity=".65"/>
+    <circle cx="76" cy="85" r="10"/><circle cx="134" cy="57" r="10"/><circle cx="134" cy="113" r="10"/>
+  </g>
+  <text x="170" y="102" fill="#f7fbff" font-family="Arial,Helvetica,sans-serif" font-size="34" font-weight="700">OpenMesh for Node.js</text>
+  <text x="76" y="278" fill="#f7fbff" font-family="Arial,Helvetica,sans-serif" font-size="78" font-weight="700" letter-spacing="-4">Start as an API.</text>
+  <text x="76" y="365" fill="url(#g2)" font-family="Arial,Helvetica,sans-serif" font-size="78" font-weight="700" letter-spacing="-4">Grow into a mesh.</text>
+  <text x="80" y="444" fill="#aab6c2" font-family="Arial,Helvetica,sans-serif" font-size="28">TypeScript service runtime ´ discovery » traffic policy » mTLS · observability</text>
+  <rect x="80" y="505" rx="12" width="440" height="58" fill="#0a0f14" stroke="#33404b"/>
+  <text x="106" y="543" fill="#7cffb2" font-family="Menlo,Consolas,monospace" font-size="24">$ npm install openmesh-node</text>
+  <text x="1010" y="548" fill="#748291" font-family="Menlo,Consolas,monospace" font-size="20">v0.5.0</text>
+</svg>

@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "seo:audit": "node scripts/seo-audit.mjs",
+    "build:seo": "npm run build && npm run seo:audit"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

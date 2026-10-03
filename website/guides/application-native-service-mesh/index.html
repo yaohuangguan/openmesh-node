@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Application-Native Service Mesh for Node.js | OpenMesh</title>
+    <meta name="description" content="OpenMesh application-native service mesh for Node.js: live discovery, traffic policy, backpressure, retries, circuits, mTLS and observability without a sidecar hop." />
+    <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
+    <meta name="theme-color" content="#05070a" />
+    <link rel="canonical" href="https://openmesh-node.vercel.app/guides/application-native-service-mesh/" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="OpenMesh for Node.js" />
+    <meta property="og:url" content="https://openmesh-node.vercel.app/guides/application-native-service-mesh/" />
+    <meta property="og:title" content="Application-Native Service Mesh for Node.js | OpenMesh" />
+    <meta property="og:description" content="OpenMesh application-native service mesh for Node.js: live discovery, traffic policy, backpressure, retries, circuits, mTLS and observability without a sidecar hop." />
+    <meta property="og:image" content="https://openmesh-node.vercel.app/og/openmesh-node.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Application-Native Service Mesh for Node.js | OpenMesh" />
+    <meta name="twitter:description" content="OpenMesh application-native service mesh for Node.js: live discovery, traffic policy, backpressure, retries, circuits, mTLS and observability without a sidecar hop." />
+    <meta name="twitter:image" content="https://openmesh-node.vercel.app/og/openmesh-node.png" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebPage","@id":"https://openmesh-node.vercel.app/guides/application-native-service-mesh/#webpage","url":"https://openmesh-node.vercel.app/guides/application-native-service-mesh/","name":"Application-Native Service Mesh for Node.js | OpenMesh","description":"OpenMesh application-native service mesh for Node.js: live discovery, traffic policy, backpressure, retries, circuits, mTLS and observability without a sidecar hop.","headline":"A service mesh inside the Node.js application boundary.","datePublished":"2026-10-04","dateModified":"2026-10-04","isPartOf":{"@id":"https://openmesh-node.vercel.app/#website"},"about":{"@id":"https://openmesh-node.vercel.app/#software"},"inLanguage":"en","primaryImageOfPage":{"@type":"ImageObject","url":"https://openmesh-node.vercel.app/og/openmesh-node.png","width":1200,"height":630}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"OpenMesh for Node.js","item":"https://openmesh-node.vercel.app/"},{"@type":"ListItem","position":2,"name":"Guides","item":"https://openmesh-node.vercel.app/guides/"},{"@type":"ListItem","position":3,"name":"Application-native service mesh","item":"https://openmesh-node.vercel.app/guides/application-native-service-mesh/"}]}]}</script>
+    <link rel="stylesheet" href="/src/guide.css" />
+  </head>
+  <body>
+    <header class="guide-topbar">
+      <a class="brand" href="/" aria-label="OpenMesh for Node.js home">
+        <span class="brand-glyph" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>OpenMesh</span>
+      </a>
+      <nav aria-label="Guide navigation"><a href="/docs/">Docs</a><a href="/guides/">Guides</a><a href="https://github.com/yaohuangguan/openmesh-node">GitHub ↗</a></nav>
+    </header>
+    <main class="guide-shell">
+      <header class="guide-hero">
+        <div class="breadcrumb"><a href="/">OpenMesh</a><span>/</span><a href="/guides/">Guides</a><span>/</span><span>Application-native service mesh</span></div>
+        <div class="eyebrow">Application-native service mesh</div>
+        <h1>A service mesh inside the Node.js application boundary.</h1>
+        <p>A traditional service mesh usually places a proxy beside each workload. OpenMesh takes a different path for Node.js: the application owns the service relationship directly, so discovery, routing policy, backpressure, retries, circuits, identity and telemetry share the same runtime state as the caller.</p>
+        <div class="article-meta"><span>OpenMesh 0.5</span><span>Node.js ≥ 22</span><span>Updated 2026-10-04</span></div>
+      </header>
+
+      <div class="guide-layout">
+        <aside class="toc" aria-label="On this page">
+          <strong>On this page</strong>
+          <a href="#meaning">Application-native means the caller owns the relationship.</a>
+          <a href="#two-stage-routing">First choose the subset. Then choose the peer.</a>
+          <a href="#failure">Backpressure and retries are bounded together.</a>
+          <a href="#identity">Service identity can travel with the same relationship.</a>
+          <a href="#not-istio">It is not a drop-in replacement for an infrastructure mesh.</a>
+        </aside>
+        <article class="guide-article">
+        <section id="meaning">
+          <div class="guide-kicker">01 · model</div>
+          <h2>Application-native means the caller owns the relationship.</h2>
+          <p>With OpenMesh, <code>app.mesh('payments')</code> returns a lazy service handle. The first request creates a managed pool for that relationship; repeated calls reuse it. The pool retains live topology, admission state, circuit history, latency statistics, traffic targeting and transport resources.</p>
+<p>This is materially different from sprinkling <code>fetch()</code> calls through handlers. The caller still sees HTTP semantics, but the operational behavior of a downstream relationship is centralized and inspectable.</p>
+<div class="callout"><strong>No sidecar hop</strong><p>OpenMesh does not proxy application requests through a separate Go or Envoy process. The Node.js runtime remains in the data path.</p></div>
+        </section>
+        <section id="two-stage-routing">
+          <div class="guide-kicker">02 · traffic</div>
+          <h2>First choose the subset. Then choose the peer.</h2>
+          <p>OpenMesh 0.5 separates <strong>traffic targeting</strong> from <strong>peer selection</strong>. A request can first be narrowed to an eligible subset by metadata, ordered header rules, weighted splits or locality preference. Only then does the peer selector choose an instance inside that subset.</p>
+<div class="code-card"><pre><code>mesh: {
+  services: {
+    payments: {
+      traffic: {
+        split: [
+          { match: { version: 'v1' }, weight: 90 },
+          { match: { version: 'v2' }, weight: 10 }
+        ]
+      }
+    }
+  }
+}</code></pre></div>
+<p>A stable request key can keep weighted selection sticky. Explicit targets fail closed when no matching peer exists. Retries remain inside the selected traffic subset instead of silently escaping a canary or locality rule.</p>
+        </section>
+        <section id="failure">
+          <div class="guide-kicker">03 · failure semantics</div>
+          <h2>Backpressure and retries are bounded together.</h2>
+          <p>A distributed call has more states than success and error. It can wait in a queue, consume an in-flight slot, time out before transport starts, fail after headers have been committed, or reach a peer whose circuit is already open.</p>
+<p>OpenMesh can bound those states with per-service admission, <code>maxInflight</code>, bounded FIFO queues, one total deadline across queueing and attempts, per-peer circuits and optional adaptive concurrency. Unsafe methods are not retried implicitly; callers can opt in when they have an idempotency key or equivalent guarantee.</p>
+<p>Streaming responses have explicit semantics too: once successful non-5xx headers are handed to the caller, a later body failure is surfaced to the consumer and is never replayed against another peer.</p>
+        </section>
+        <section id="identity">
+          <div class="guide-kicker">04 · trust</div>
+          <h2>Service identity can travel with the same relationship.</h2>
+          <p>OpenMesh supports SPIFFE-style workload identities and mutual TLS. The local runtime validates its certificate before serving traffic; inbound callers can be restricted by service identity, and outbound mesh calls verify that the destination certificate identifies the expected service.</p>
+<p>Certificate material can be rotated for new inbound and outbound connections without restarting the application. Issuance, revocation distribution and trust-domain governance are intentionally external.</p>
+        </section>
+        <section id="not-istio">
+          <div class="guide-kicker">05 · boundary</div>
+          <h2>It is not a drop-in replacement for an infrastructure mesh.</h2>
+          <p>OpenMesh does not provide transparent interception, Kubernetes CNI behavior, certificate authority automation, cross-language proxies or cluster-level policy enforcement. Those are different product boundaries.</p>
+<p>The application-native model is strongest when a Node.js team wants explicit service-to-service behavior in code and runtime state, wants to avoid a sidecar hop, and is comfortable keeping infrastructure responsibilities outside the package.</p>
+<div class="matrix"><table><thead><tr><th>Concern</th><th>OpenMesh</th><th>External</th></tr></thead><tbody>
+<tr><td>Discovery + routing</td><td>yes</td><td>optional external adapters</td></tr>
+<tr><td>Retries + circuits + pressure</td><td>yes</td><td>—</td></tr>
+<tr><td>mTLS verification</td><td>yes</td><td>certificate issuance</td></tr>
+<tr><td>Telemetry events</td><td>yes</td><td>collector/backend</td></tr>
+<tr><td>Kubernetes networking</td><td>no</td><td>platform/CNI</td></tr>
+</tbody></table></div>
+<p>See the <a href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/mesh-runtime.md">application-native mesh deep dive</a> for the exact current contract.</p>
+        </section>
+          <section>
+            <div class="guide-kicker">Continue</div>
+            <h2>Related OpenMesh guides.</h2>
+            <div class="next-guides">
+          <a href="/guides/peer-routing/"><strong>Peer routing and resilience</strong><span>Rendezvous hashing, P2C, deadlines, circuits, backpressure and streams.</span></a>
+          <a href="/guides/workload-identity-mtls/"><strong>mTLS workload identity</strong><span>How service identity and certificate rotation are enforced.</span></a>
+            </div>
+          </section>
+        </article>
+      </div>
+    </main>
+    <footer class="guide-footer">
+      <span>OpenMesh for Node.js · <code>openmesh-node</code> · v0.5.0 · MIT</span>
+      <div><a href="/">home</a><a href="/docs/">docs</a><a href="https://www.npmjs.com/package/openmesh-node">npm</a><a href="https://github.com/yaohuangguan/openmesh-node">source</a></div>
+    </footer>
+  </body>
+</html>
