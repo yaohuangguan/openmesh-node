@@ -84,7 +84,7 @@ const charge = await payments.post('/charges', {
 
 That call reuses OpenMesh's existing discovery watch, per-service bulkhead, deadlines, retry policy, circuit state, peer routing, tracing, and metrics. Traffic rules, weighted canaries, locality preference/failover, and live control-plane policy updates sit above the same warm service pool. There is no sidecar hop.
 
-The 0.5 preview does **not** yet provide workload identity or automatic service-to-service mTLS, so it should not be described as a drop-in Istio/Linkerd replacement.
+The 0.5 preview also includes **SPIFFE-style workload identity and service-to-service mTLS**: the same application identity config protects inbound HTTPS and authenticates outbound `app.mesh()` calls. Certificate issuance/rotation is still external, so OpenMesh should not be described as a drop-in Istio/Linkerd replacement.
 
 ## Why OpenMesh
 
@@ -99,6 +99,7 @@ Most Node.js HTTP libraries stop at the server boundary. OpenMesh keeps going.
 | How does topology update without restarts? | Registration leases + push watches |
 | How do I change config safely at runtime? | Immutable snapshots + revision/epoch CAS |
 | How do I persist the control plane? | Durable Redis adapters |
+| How do services authenticate each other? | SPIFFE-style workload identity + mutual TLS + inbound allow-lists |
 | How do I limit control-plane access? | Scoped credentials + service/namespace boundaries |
 | How do I export telemetry? | Request/server/peer lifecycle events + OpenTelemetry-compatible metrics bridge |
 

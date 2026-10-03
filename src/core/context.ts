@@ -10,6 +10,8 @@ export interface ContextRoute {
   serializer?: ((body: unknown, status?: number) => string | Buffer | Uint8Array) | null;
 }
 
+export interface ContextState extends Record<string, unknown> {}
+
 export class HttpError extends Error {
   statusCode: number;
   expose: boolean;
@@ -38,7 +40,7 @@ export class Context {
   private _values: string[] | null;
   private _params: Record<string, string> | null = null;
   private _query: Record<string, string | string[]> | null = null;
-  private _state: Record<string, unknown> | null = null;
+  private _state: ContextState | null = null;
   private _body: unknown = undefined;
 
   constructor(
@@ -70,7 +72,7 @@ export class Context {
   get body(): unknown { return this._body; }
   set body(value: unknown) { this._body = value; }
   get requestBody(): unknown { return this.req.body; }
-  get state(): Record<string, unknown> { return this._state || (this._state = Object.create(null) as Record<string, unknown>); }
+  get state(): ContextState { return this._state || (this._state = Object.create(null) as ContextState); }
 
   get params(): Record<string, string> {
     if (this._params) return this._params;

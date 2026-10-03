@@ -1,7 +1,7 @@
-import openmesh, { definePlugin, HttpError, created as rootCreated, reply as rootReply, type AppEvent, type Context, type StandardSchemaV1 as RootStandardSchemaV1, type MeshedOpenMesh } from 'openmesh-node';
+import openmesh, { definePlugin, HttpError, created as rootCreated, reply as rootReply, type AppEvent, type Context, type StandardSchemaV1 as RootStandardSchemaV1, type MeshedOpenMesh, type WorkloadIdentityOptions } from 'openmesh-node';
 import { jsonBody, bodyParser, textBody, rawBody, formBody, multipartBody, requestContext, health } from 'openmesh-node/plugins';
 import { POST, pipe, input, returns, implement, created, ok, api, type StandardSchemaV1 } from 'openmesh-node/http';
-import { PeerPool, type PeerPoolEvent, type PeerPoolStats, type PeerSelectionStrategy } from 'openmesh-node/mesh';
+import { PeerPool, type PeerPoolEvent, type PeerPoolStats, type PeerSelectionStrategy, type PeerTlsOptions } from 'openmesh-node/mesh';
 import { ControlClient, controlPlane, serviceRegistration, ConfigStore, ServiceRegistry, type ControlCredential, type ControlPlaneInfo } from 'openmesh-node/services';
 import { createOpenTelemetryObservers, type OpenTelemetryMeter } from 'openmesh-node/otel';
 import { runRegistryAdapterConformance, runConfigAdapterConformance } from 'openmesh-node/services/testing';
@@ -228,3 +228,40 @@ void typedPayments.get('/health', { target: { version: 'v2' } });
 
 // @ts-expect-error mesh is optional when OpenMesh is created without mesh configuration
 openmesh().mesh('payments');
+
+
+const workloadIdentityOptions: WorkloadIdentityOptions = {
+  trustDomain: 'openmesh.test',
+  ca: 'test-ca',
+  cert: 'test-cert',
+  key: 'test-key',
+  allow: ['payments']
+};
+const secureMeshed = openmesh({
+  service: 'gateway',
+  identity: workloadIdentityOptions,
+  mesh: {
+    control: {
+      url: 'http://127.0.0.1:4000/_mesh',
+      token: 'mesh-control-token-value'
+    }
+  }
+});
+void secureMeshed.mesh('payments');
+
+const peerTlsOptions: PeerTlsOptions = {
+  ca: 'test-ca',
+  cert: 'test-cert',
+  key: 'test-key',
+  expectedIdentity: 'spiffe://openmesh.test/service/payments'
+};
+void peerTlsOptions;
+
+
+openmesh().get('/typed-peer-state', {}, async ({ state }) => {
+  const peerIdentity: string | undefined = state.peerIdentity;
+  const peerService: string | undefined = state.peerService;
+  void peerIdentity;
+  void peerService;
+  return { ok: true };
+});

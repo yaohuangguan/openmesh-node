@@ -1,8 +1,10 @@
 import * as http from 'node:http';
 import * as https from 'node:https';
 import type { IncomingHttpHeaders } from 'node:http';
+import type { PeerCertificate } from 'node:tls';
 import { createHash } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
+import { certificateHasExclusiveWorkloadIdentity, validateWorkloadIdentity } from '../security/identity.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE']);
 
@@ -201,7 +203,7 @@ export class PeerStreamResponse {
   destroy(error?: Error): void { this.body.destroy(error); }
 }
 
-function validatePeers(peers: Peer[]): Readonly<Peer>[] {
+function validatePeers(peers: Peer[], requireTls = false): Readonly<Peer>[] {
   if (!Array.isArray(peers)) throw new TypeError('Peers must be an array');
   const ids = new Set<string>();
   return peers.map(peer => {
@@ -211,6 +213,9 @@ function validatePeers(peers: Peer[]): Readonly<Peer>[] {
     const url = new URL(peer.url);
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
       throw new TypeError('Peer URL must be a trusted HTTP(S) origin or path prefix without credentials, query or fragment');
+    }
+    if (requireTls && url.protocol !== 'https:') {
+      throw new TypeError('Peer URL must use HTTPS when workload identity verification is enabled');
     }
     ids.add(peer.id);
     return Object.freeze({ id: peer.id, url: url.origin + url.pathname.replace(/\/$/, '') });
@@ -236,8 +241,19 @@ function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+export interface PeerTlsOptions {
+  ca?: https.AgentOptions['ca'];
+  cert?: https.AgentOptions['cert'];
+  key?: https.AgentOptions['key'];
+  passphrase?: string;
+  minVersion?: https.AgentOptions['minVersion'];
+  rejectUnauthorized?: boolean;
+  expectedIdentity?: string;
+}
+
 export interface PeerPoolOptions {
   peers?: Peer[];
+  tls?: PeerTlsOptions;
   timeout?: number;
   retries?: number;
   failureThreshold?: number;
@@ -264,6 +280,7 @@ export class PeerPool {
   selection: PeerSelectionStrategy;
   private _http: http.Agent;
   private _https: https.Agent;
+  private _requireTls = false;
   private _transport: Transport;
   private _streamTransport: StreamTransport;
   private _observer: PeerPoolObserver | null;
@@ -331,9 +348,42 @@ export class PeerPool {
     if (options.streamTransport !== undefined && typeof options.streamTransport !== 'function') throw new TypeError('streamTransport must be a function');
     if (options.onEvent !== undefined && typeof options.onEvent !== 'function') throw new TypeError('onEvent must be a function');
 
+    const tlsOptions = options.tls;
+    if (tlsOptions !== undefined && (!tlsOptions || typeof tlsOptions !== 'object' || Array.isArray(tlsOptions))) {
+      throw new TypeError('tls must be a TLS client options object');
+    }
+    if ((tlsOptions?.cert === undefined) !== (tlsOptions?.key === undefined)) {
+      throw new TypeError('TLS client cert and key must be configured together');
+    }
+    if (tlsOptions?.expectedIdentity !== undefined) {
+      validateWorkloadIdentity(tlsOptions.expectedIdentity);
+      if (tlsOptions.rejectUnauthorized === false) {
+        throw new TypeError('rejectUnauthorized cannot be false when workload identity verification is enabled');
+      }
+      this._requireTls = true;
+    }
+
     this._observer = options.onEvent || null;
     this._http = new http.Agent({ keepAlive: true, maxSockets, maxTotalSockets: 256 });
-    this._https = new https.Agent({ keepAlive: true, maxSockets, maxTotalSockets: 256 });
+    this._https = new https.Agent({
+      keepAlive: true,
+      maxSockets,
+      maxTotalSockets: 256,
+      ...(tlsOptions || {}),
+      ...(tlsOptions?.expectedIdentity
+        ? {
+            checkServerIdentity: (_hostname: string, certificate: PeerCertificate) => {
+              if (!certificateHasExclusiveWorkloadIdentity(certificate, tlsOptions.expectedIdentity!)) {
+                return new PeerError(
+                  'Peer certificate does not match workload identity ' + tlsOptions.expectedIdentity,
+                  'IDENTITY_MISMATCH'
+                );
+              }
+              return undefined;
+            }
+          }
+        : {})
+    });
     this._transport = options.transport || (request => this._send(request));
     this._streamTransport = options.streamTransport
       || (options.transport
@@ -347,7 +397,7 @@ export class PeerPool {
 
   updatePeers(peers: Peer[]): this {
     if (this._closed) throw new PeerError('Peer pool is closed', 'POOL_CLOSED');
-    const next = validatePeers(peers);
+    const next = validatePeers(peers, this._requireTls);
     const states = new Map<string, PeerState>();
     for (const peer of next) {
       const previous = this._states.get(peer.id);

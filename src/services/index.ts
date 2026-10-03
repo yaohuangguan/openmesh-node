@@ -1,13 +1,22 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import type { ServerResponse } from 'node:http';
+import { TLSSocket, type SecureVersion } from 'node:tls';
 import { definePlugin } from '../core/app.js';
-import type { OpenMesh } from '../core/app.js';
+import type { OpenMesh, Middleware } from '../core/app.js';
 import type { Context } from '../core/context.js';
 import { HttpError } from '../core/context.js';
 import { jsonBody, currentRequestContext } from '../plugins/index.js';
 import { PeerPool, PeerError, PeerResponse } from '../mesh/index.js';
 import type { Peer, PeerOptions, PeerPoolOptions, PeerPoolStats, PeerStats, PeerStreamOptions, PeerStreamResponse } from '../mesh/index.js';
+import {
+  certificatePemHasIdentity,
+  certificateUriIdentities,
+  validateTrustDomain,
+  validateWorkloadService,
+  workloadIdentityUri,
+  workloadServiceFromIdentity
+} from '../security/identity.js';
 import {
   RegistryAdapter,
   ConfigAdapter,
@@ -1167,6 +1176,119 @@ export class ServicePool {
 export type MeshMetadataValue = string | number | boolean;
 export type MeshMetadataMatch = Readonly<Record<string, MeshMetadataValue>>;
 
+export type WorkloadCertificateAuthority = string | Buffer | Array<string | Buffer>;
+
+export interface MeshIdentityOptions {
+  trustDomain: string;
+  service: string;
+  ca: WorkloadCertificateAuthority;
+  cert: string | Buffer;
+  key: string | Buffer;
+  passphrase?: string;
+  minVersion?: SecureVersion;
+}
+
+export interface WorkloadIdentityOptions extends Omit<MeshIdentityOptions, 'service'> {
+  allow?: readonly string[];
+}
+
+export interface WorkloadAuthorizerOptions {
+  trustDomain: string;
+  allow?: readonly string[];
+}
+
+function validCertificateMaterial(value: unknown): boolean {
+  return (
+    (typeof value === 'string' && value.length > 0) ||
+    (Buffer.isBuffer(value) && value.length > 0)
+  );
+}
+
+function validateCertificateAuthority(value: unknown): asserts value is WorkloadCertificateAuthority {
+  if (validCertificateMaterial(value)) return;
+  if (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(validCertificateMaterial)
+  ) return;
+  throw new TypeError('workload identity ca must contain certificate material');
+}
+
+export function validateMeshIdentityOptions(identity: MeshIdentityOptions): void {
+  if (!identity || typeof identity !== 'object' || Array.isArray(identity)) {
+    throw new TypeError('mesh identity must be an object');
+  }
+  validateTrustDomain(identity.trustDomain);
+  validateWorkloadService(identity.service);
+  validateCertificateAuthority(identity.ca);
+  if (!validCertificateMaterial(identity.cert)) {
+    throw new TypeError('workload identity cert must contain certificate material');
+  }
+  if (!validCertificateMaterial(identity.key)) {
+    throw new TypeError('workload identity key must contain private key material');
+  }
+  if (identity.passphrase !== undefined && typeof identity.passphrase !== 'string') {
+    throw new TypeError('workload identity passphrase must be a string');
+  }
+
+  const expected = workloadIdentityUri(identity.trustDomain, identity.service);
+  try {
+    if (!certificatePemHasIdentity(identity.cert, expected)) {
+      throw new TypeError('workload certificate does not contain its configured SPIFFE identity');
+    }
+  } catch (error) {
+    if (error instanceof TypeError) throw error;
+    throw new TypeError('workload identity cert must be a valid X.509 certificate', { cause: error });
+  }
+}
+
+export function workloadIdentity(options: WorkloadAuthorizerOptions): Middleware {
+  if (!options || typeof options !== 'object' || Array.isArray(options)) {
+    throw new TypeError('workload identity authorizer must be an object');
+  }
+  validateTrustDomain(options.trustDomain);
+
+  let allowed: ReadonlySet<string> | null = null;
+  if (options.allow !== undefined) {
+    if (!Array.isArray(options.allow)) throw new TypeError('workload identity allow must be an array');
+    const services = new Set<string>();
+    for (const service of options.allow) {
+      validateWorkloadService(service);
+      services.add(service);
+    }
+    allowed = services;
+  }
+
+  return async (ctx, next) => {
+    const socket = ctx.req.socket;
+    if (!(socket instanceof TLSSocket) || !socket.encrypted || !socket.authorized) {
+      throw new HttpError(401, 'Mutual TLS workload identity required');
+    }
+
+    const certificate = socket.getPeerCertificate();
+    const identities = certificateUriIdentities(certificate)
+      .filter(identity => identity.startsWith('spiffe://'));
+
+    if (identities.length !== 1) {
+      throw new HttpError(403, 'Client certificate must contain exactly one workload identity');
+    }
+
+    const selectedIdentity = identities[0]!;
+    const selectedService = workloadServiceFromIdentity(selectedIdentity, options.trustDomain);
+
+    if (!selectedService) {
+      throw new HttpError(403, 'Client certificate has no trusted workload identity');
+    }
+    if (allowed && !allowed.has(selectedService)) {
+      throw new HttpError(403, 'Workload identity is not allowed to call this service');
+    }
+
+    ctx.state.peerIdentity = selectedIdentity;
+    ctx.state.peerService = selectedService;
+    return next();
+  };
+}
+
 export interface MeshTrafficTarget {
   name?: string;
   match: MeshMetadataMatch;
@@ -1224,6 +1346,7 @@ export interface MeshRuntimeOptions {
     token: string;
     timeout?: number;
   };
+  identity?: MeshIdentityOptions;
   defaults?: MeshServiceOptions;
   services?: Readonly<Record<string, MeshServiceOptions>>;
   closeControl?: boolean;
@@ -1706,6 +1829,7 @@ export class MeshRuntime {
   readonly client: ControlClient;
   private readonly _ownsClient: boolean;
   private readonly _closeControl: boolean;
+  private readonly _identity: MeshIdentityOptions | undefined;
   private readonly _defaults: MeshServiceOptions | undefined;
   private readonly _configured: Readonly<Record<string, MeshServiceOptions>>;
   private readonly _services = new Map<string, MeshService>();
@@ -1725,6 +1849,8 @@ export class MeshRuntime {
     }
 
     this._closeControl = options.closeControl ?? this._ownsClient;
+    if (options.identity) validateMeshIdentityOptions(options.identity);
+    this._identity = options.identity;
     this._defaults = options.defaults;
     this._configured = Object.freeze({ ...(options.services || {}) });
 
@@ -1752,6 +1878,19 @@ export class MeshRuntime {
       this._configured[serviceName],
       options
     );
+
+    if (this._identity) {
+      resolved.tls = {
+        ca: this._identity.ca,
+        cert: this._identity.cert,
+        key: this._identity.key,
+        ...(this._identity.passphrase ? { passphrase: this._identity.passphrase } : {}),
+        minVersion: this._identity.minVersion ?? 'TLSv1.3',
+        rejectUnauthorized: true,
+        expectedIdentity: workloadIdentityUri(this._identity.trustDomain, serviceName)
+      };
+    }
+
     const serviceClient = new MeshService(this, serviceName, resolved);
     this._services.set(serviceName, serviceClient);
     return serviceClient;
@@ -1794,6 +1933,13 @@ export function meshRuntime(options: MeshRuntimeOptions): ReturnType<typeof defi
   return definePlugin(app => {
     attachMeshRuntime(app, options);
   }, { name: 'mesh-runtime', global: true });
+}
+
+declare module '../core/context.js' {
+  interface ContextState {
+    peerIdentity?: string;
+    peerService?: string;
+  }
 }
 
 declare module '../core/app.js' {

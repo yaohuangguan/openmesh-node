@@ -8,7 +8,7 @@ Traditional service meshes commonly put a network proxy beside every workload. O
 
 There is no sidecar hop in the OpenMesh data path.
 
-This is **not** a claim that OpenMesh 0.5 replaces Istio or Linkerd. Workload identity and automatic service-to-service mTLS are not part of this preview yet.
+This is **not** a claim that OpenMesh 0.5 replaces Istio or Linkerd. The preview now includes SPIFFE-style workload identity and service-to-service mTLS, but certificate issuance, rotation, revocation distribution, transparent traffic interception, and Kubernetes networking integration remain outside the runtime.
 
 ## Start with a normal API
 
@@ -188,6 +188,132 @@ An incoming request gets or preserves:
 Calls made through `app.mesh(...)` automatically carry the current outbound request context.
 
 Business handlers do not need to copy tracing headers manually.
+
+## Workload identity and mTLS
+
+OpenMesh 0.5 can bind a Node.js service to a SPIFFE-style workload identity.
+
+Configure the identity once at the application boundary:
+
+```ts
+import { readFileSync } from 'node:fs';
+import openmesh from 'openmesh-node';
+
+const payments = openmesh({
+  service: 'payments',
+
+  identity: {
+    trustDomain: 'mesh.example.internal',
+    ca: readFileSync('./pki/ca.pem'),
+    cert: readFileSync('./pki/payments-cert.pem'),
+    key: readFileSync('./pki/payments-key.pem'),
+
+    allow: ['gateway']
+  }
+});
+```
+
+The configured certificate must contain this URI SAN:
+
+```text
+spiffe://mesh.example.internal/service/payments
+```
+
+OpenMesh validates that match before the application starts serving traffic. A workload certificate must contain exactly one SPIFFE URI SAN, preventing one certificate from ambiguously representing multiple mesh services.
+
+With `identity` enabled, the owned server becomes HTTPS with:
+
+- the configured workload certificate and key;
+- the configured CA as the client trust anchor;
+- `requestCert: true`;
+- `rejectUnauthorized: true`;
+- TLS 1.3 by default unless `minVersion` is explicitly supplied.
+
+After the TLS chain is verified, OpenMesh performs application-level workload authorization.
+
+For the example above, a valid certificate signed by the same CA is **not enough**. Its URI SAN must identify a workload in the configured trust domain, and its service name must be in `allow`.
+
+The authenticated caller is available to normal and typed handlers:
+
+```ts
+app.get('/internal', {}, async ({ state }) => {
+  return {
+    caller: state.peerIdentity,
+    service: state.peerService
+  };
+});
+```
+
+When `allow` is omitted, any correctly authenticated `/service/<name>` workload in the same trust domain is accepted. An empty allow-list accepts none.
+
+### The same identity protects outbound mesh calls
+
+If the application also has a mesh runtime:
+
+```ts
+const gateway = openmesh({
+  service: 'gateway',
+
+  identity: {
+    trustDomain: 'mesh.example.internal',
+    ca: readFileSync('./pki/ca.pem'),
+    cert: readFileSync('./pki/gateway-cert.pem'),
+    key: readFileSync('./pki/gateway-key.pem')
+  },
+
+  mesh: {
+    control: {
+      url: process.env.OPENMESH_CONTROL_URL!,
+      token: process.env.OPENMESH_TOKEN!
+    }
+  }
+});
+
+const payments = gateway.mesh('payments');
+```
+
+OpenMesh automatically uses the gateway certificate as the TLS client identity and expects the discovered payments peer to present:
+
+```text
+spiffe://mesh.example.internal/service/payments
+```
+
+The expected remote identity is derived from the service handle name. A discovered `http://` peer is rejected before a request is attempted, and an HTTPS peer signed by the trusted CA but carrying the wrong workload URI fails with `IDENTITY_MISMATCH`.
+
+In identity mode, URI SAN identity replaces DNS/IP hostname matching while the certificate chain still must validate to the configured CA. This allows discovered private IPs to change without weakening workload identity.
+
+### Service registration must advertise HTTPS
+
+An mTLS service should register its secure address:
+
+```ts
+app.register(serviceRegistration({
+  client,
+  service: 'payments',
+  id: 'payments-a',
+
+  url: address =>
+    'https://127.0.0.1:' + address.port
+}));
+```
+
+OpenMesh does not silently rewrite an advertised HTTP endpoint to HTTPS.
+
+### Current PKI boundary
+
+OpenMesh currently handles:
+
+- local certificate/identity consistency checks;
+- mutual TLS transport;
+- CA chain verification;
+- exact SPIFFE URI SAN verification;
+- inbound service allow-lists;
+- automatic outbound identity selection by mesh service name;
+- authenticated caller identity in request state.
+
+It does not yet operate a certificate authority or certificate distribution system.
+
+Certificate issuance, short-lived certificate renewal, revocation distribution, and zero-downtime certificate rotation remain external responsibilities in this preview.
 
 ## Traffic policy
 
@@ -489,19 +615,23 @@ The 0.5 preview covers application-level service communication:
 - circuit breakers;
 - buffered and streaming requests;
 - trace/request-id propagation;
+- SPIFFE-style workload identity;
+- service-to-service mutual TLS with CA and URI SAN verification;
+- inbound workload allow-lists;
 - lifecycle metrics and OpenTelemetry bridge;
 - in-memory or Redis-backed control-plane state.
 
 It does **not** yet provide:
 
-- workload identity;
-- automatic service-to-service mTLS;
+- automatic certificate issuance or a built-in CA;
+- short-lived certificate renewal and zero-downtime rotation;
+- revocation distribution;
 - transparent interception of arbitrary process traffic;
 - Kubernetes CNI integration;
 - ingress/gateway replacement;
 - L4 proxying for arbitrary non-HTTP protocols.
 
-The next major mesh security milestone should be workload identity + mTLS.
+The next mesh-security milestone is automated identity lifecycle: issuance/integration, rotation, and revocation without restarting workloads.
 
 ## Product direction
 

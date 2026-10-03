@@ -1,6 +1,8 @@
 import * as http from 'node:http';
+import * as https from 'node:https';
 import type { AddressInfo, ListenOptions } from 'node:net';
 import type { ServerOptions } from 'node:http';
+import type { ServerOptions as HttpsServerOptions } from 'node:https';
 import { Router, type Routable } from './router.js';
 import { compose } from './compose.js';
 import { Context, HttpError, prepareResponse, sendPrepared } from './context.js';
@@ -97,6 +99,7 @@ export type TypedRouteInput<Path extends string, Options> = Readonly<{
   params: TypedParams<Path, Options>;
   query: TypedQuery<Options>;
   headers: TypedHeaders<Options>;
+  state: Context['state'];
 }>;
 
 type ResponseMapResult<Map> = {
@@ -207,6 +210,7 @@ export interface AppOptions {
   pluginTimeout?: number;
   shutdownTimeout?: number;
   server?: ServerOptions;
+  tls?: HttpsServerOptions;
   serverLimits?: ServerLimits;
   validatorCompiler?: ValidatorCompiler;
   serializerCompiler?: SerializerCompiler;
@@ -328,6 +332,7 @@ interface ResolvedOptions {
   pluginTimeout: number;
   shutdownTimeout: number;
   server: ServerOptions;
+  tls: HttpsServerOptions | null;
   serverLimits: ServerLimits;
 }
 
@@ -516,7 +521,8 @@ async function typedInput(route: RouteRecord, ctx: Context): Promise<Readonly<Re
     body,
     params,
     query,
-    headers
+    headers,
+    state: ctx.state
   });
 }
 
@@ -752,7 +758,7 @@ export class OpenMesh {
   _notFoundHandlers: NotFoundRecord[] = [];
   _errorHandler: ((error: Error, ctx: Context) => unknown | Promise<unknown>) | null = null;
   _sockets = new Set<import('node:net').Socket>();
-  _server: http.Server | null = null;
+  _server: http.Server | https.Server | null = null;
   _options: ResolvedOptions;
   _serverLimits: ResolvedServerLimits;
   _validatorCompiler: ValidatorCompiler | null;
@@ -768,6 +774,7 @@ export class OpenMesh {
       pluginTimeout: 10000,
       shutdownTimeout: 5000,
       server: {},
+      tls: null,
       serverLimits: {},
       ...options
     };
@@ -775,6 +782,12 @@ export class OpenMesh {
       if (!Number.isFinite(this._options[key]) || this._options[key] < 0) {
         throw new TypeError(key + ' must be a nonnegative finite number');
       }
+    }
+    if (
+      this._options.tls !== null &&
+      (!this._options.tls || typeof this._options.tls !== 'object' || Array.isArray(this._options.tls))
+    ) {
+      throw new TypeError('tls must be an HTTPS server options object');
     }
 
     this._serverLimits = {
@@ -808,7 +821,7 @@ export class OpenMesh {
     this._listener = (req, res) => this._dispatch(req, res);
   }
 
-  get server(): http.Server | null { return this._root._server; }
+  get server(): http.Server | https.Server | null { return this._root._server; }
   get phase(): string { return this._root._phase; }
   get prefix(): string { return this._prefix; }
   get version(): string { return '0.4.0'; }
@@ -1218,7 +1231,9 @@ export class OpenMesh {
     if (root._server || root._phase !== 'ready') throw new Error('Application has already started or closed');
 
     const listenOptions: ListenOptions = typeof options === 'number' ? { port: options } : options;
-    root._server = http.createServer(root._options.server, root._listener);
+    root._server = root._options.tls
+      ? https.createServer({ ...root._options.server, ...root._options.tls }, root._listener)
+      : http.createServer(root._options.server, root._listener);
     root._server.requestTimeout = root._serverLimits.requestTimeout;
     root._server.headersTimeout = root._serverLimits.headersTimeout;
     root._server.keepAliveTimeout = root._serverLimits.keepAliveTimeout;

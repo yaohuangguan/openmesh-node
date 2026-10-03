@@ -92,3 +92,21 @@ void cjsTrafficConfig;
 
 const cjsPayments = cjsMeshed.mesh('payments');
 void cjsPayments.post<{ id: string }>('/charges', { body: { amount: 10 } });
+
+
+const cjsWorkloadIdentity: openmesh.WorkloadIdentityOptions = {
+  trustDomain: 'openmesh.test',
+  ca: 'test-ca',
+  cert: 'test-cert',
+  key: 'test-key',
+  allow: ['payments']
+};
+void cjsWorkloadIdentity;
+
+const cjsPeerTls: mesh.PeerTlsOptions = {
+  ca: 'test-ca',
+  cert: 'test-cert',
+  key: 'test-key',
+  expectedIdentity: 'spiffe://openmesh.test/service/payments'
+};
+void cjsPeerTls;

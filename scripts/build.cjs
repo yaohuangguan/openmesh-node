@@ -32,12 +32,17 @@ declare function openmesh(options: Types.OpenMeshOptions & { mesh: Types.MeshRun
 declare function openmesh(options?: Types.OpenMeshOptions): Types.OpenMesh;
 declare namespace openmesh {
   type Context = Types.Context;
+  type ContextState = Types.ContextState;
   type Middleware = Types.Middleware;
   type Handler = Types.Handler;
   type Plugin = Types.Plugin;
   type AppOptions = Types.AppOptions;
   type OpenMeshOptions = Types.OpenMeshOptions;
   type MeshRuntimeOptions = Types.MeshRuntimeOptions;
+  type MeshIdentityOptions = Types.MeshIdentityOptions;
+  type WorkloadIdentityOptions = Types.WorkloadIdentityOptions;
+  type WorkloadAuthorizerOptions = Types.WorkloadAuthorizerOptions;
+  type WorkloadCertificateAuthority = Types.WorkloadCertificateAuthority;
   type MeshTrafficPolicy = Types.MeshTrafficPolicy;
   type MeshTrafficRoute = Types.MeshTrafficRoute;
   type MeshTrafficWhen = Types.MeshTrafficWhen;
@@ -51,6 +56,7 @@ declare namespace openmesh {
   const HttpError: typeof Types.HttpError;
   const MeshHttpError: typeof Types.MeshHttpError;
   const definePlugin: typeof Types.definePlugin;
+  const workloadIdentity: typeof Types.workloadIdentity;
   const reply: typeof Types.reply;
   const ok: typeof Types.ok;
   const created: typeof Types.created;

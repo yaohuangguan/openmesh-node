@@ -94,6 +94,7 @@ try {
     if (typeof meshed.mesh !== 'function') throw new Error('CJS app.mesh facade missing');
     if (meshed.mesh('users').service !== 'users') throw new Error('CJS mesh service handle mismatch');
     if (typeof openmesh.created !== 'function') throw new Error('CJS root reply helpers missing');
+    if (typeof openmesh.workloadIdentity !== 'function') throw new Error('CJS workload identity export missing');
     void meshed.mesh.close();
   `;
   run(node, ['-e', cjs], { cwd: temp });
@@ -121,6 +122,7 @@ try {
     if (typeof meshed.mesh !== 'function') throw new Error('ESM app.mesh facade missing');
     if (meshed.mesh('users').service !== 'users') throw new Error('ESM mesh service handle mismatch');
     if (typeof root.created !== 'function') throw new Error('ESM root reply helpers missing');
+    if (typeof root.workloadIdentity !== 'function') throw new Error('ESM workload identity export missing');
     await meshed.mesh.close();
   `;
   run(node, ['--input-type=module', '-e', esm], { cwd: temp });
