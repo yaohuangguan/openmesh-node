@@ -176,7 +176,9 @@ function listener(name, port, routeText, downstreamTls) {
     lines.push('              matcher: { exact: "' + downstreamTls.expected + '" }');
   }
   lines.push('    filters:');
-  lines.push(manager(name, routeText).split('\n').map(line => '    - ' + line).join('\n').replace(/\n    -   /g, '\n        '));
+  const filter = manager(name, routeText).split('\n');
+  lines.push('    - ' + filter[0]);
+  for (const line of filter.slice(1)) lines.push('      ' + line);
   return lines.join('\n');
 }
 
@@ -211,6 +213,11 @@ function docker(args) {
 }
 
 function startEnvoy(name, benchDir, configName) {
+  docker([
+    'run', '--rm', '--network', 'host',
+    '-v', benchDir + ':/bench:ro', IMAGE,
+    '--mode', 'validate', '-c', '/bench/' + configName
+  ]);
   docker([
     'run', '--rm', '-d', '--name', name, '--network', 'host',
     '-v', benchDir + ':/bench:ro', IMAGE,
