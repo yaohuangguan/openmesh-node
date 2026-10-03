@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Node.js mTLS Workload Identity with SPIFFE-Style IDs | OpenMesh</title>
+    <meta name="description" content="How OpenMesh uses SPIFFE-style service identities, mutual TLS, inbound service authorization, outbound identity verification and certificate rotation in Node.js." />
+    <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
+    <meta name="theme-color" content="#05070a" />
+    <link rel="canonical" href="https://openmesh-node.vercel.app/guides/workload-identity-mtls/" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="OpenMesh for Node.js" />
+    <meta property="og:url" content="https://openmesh-node.vercel.app/guides/workload-identity-mtls/" />
+    <meta property="og:title" content="Node.js mTLS Workload Identity with SPIFFE-Style IDs | OpenMesh" />
+    <meta property="og:description" content="How OpenMesh uses SPIFFE-style service identities, mutual TLS, inbound service authorization, outbound identity verification and certificate rotation in Node.js." />
+    <meta property="og:image" content="https://openmesh-node.vercel.app/og/openmesh-node.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Node.js mTLS Workload Identity with SPIFFE-Style IDs | OpenMesh" />
+    <meta name="twitter:description" content="How OpenMesh uses SPIFFE-style service identities, mutual TLS, inbound service authorization, outbound identity verification and certificate rotation in Node.js." />
+    <meta name="twitter:image" content="https://openmesh-node.vercel.app/og/openmesh-node.png" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebPage","@id":"https://openmesh-node.vercel.app/guides/workload-identity-mtls/#webpage","url":"https://openmesh-node.vercel.app/guides/workload-identity-mtls/","name":"Node.js mTLS Workload Identity with SPIFFE-Style IDs | OpenMesh","description":"How OpenMesh uses SPIFFE-style service identities, mutual TLS, inbound service authorization, outbound identity verification and certificate rotation in Node.js.","headline":"Bind Node.js services to workload identity and mTLS.","datePublished":"2026-10-04","dateModified":"2026-10-04","isPartOf":{"@id":"https://openmesh-node.vercel.app/#website"},"about":{"@id":"https://openmesh-node.vercel.app/#software"},"inLanguage":"en","primaryImageOfPage":{"@type":"ImageObject","url":"https://openmesh-node.vercel.app/og/openmesh-node.png","width":1200,"height":630}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"OpenMesh for Node.js","item":"https://openmesh-node.vercel.app/"},{"@type":"ListItem","position":2,"name":"Guides","item":"https://openmesh-node.vercel.app/guides/"},{"@type":"ListItem","position":3,"name":"mTLS workload identity","item":"https://openmesh-node.vercel.app/guides/workload-identity-mtls/"}]}]}</script>
+    <link rel="stylesheet" href="/src/guide.css" />
+  </head>
+  <body>
+    <header class="guide-topbar">
+      <a class="brand" href="/" aria-label="OpenMesh for Node.js home">
+        <span class="brand-glyph" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>OpenMesh</span>
+      </a>
+      <nav aria-label="Guide navigation"><a href="/docs/">Docs</a><a href="/guides/">Guides</a><a href="https://github.com/yaohuangguan/openmesh-node">GitHub ↗</a></nav>
+    </header>
+    <main class="guide-shell">
+      <header class="guide-hero">
+        <div class="breadcrumb"><a href="/">OpenMesh</a><span>/</span><a href="/guides/">Guides</a><span>/</span><span>mTLS workload identity</span></div>
+        <div class="eyebrow">mTLS workload identity</div>
+        <h1>Bind Node.js services to workload identity and mTLS.</h1>
+        <p>Encryption answers who can read the transport. Workload identity answers which service is on the other end. OpenMesh 0.5 can bind a Node.js service to a SPIFFE-style identity and use the same identity model for inbound HTTPS and outbound mesh calls.</p>
+        <div class="article-meta"><span>OpenMesh 0.5</span><span>Node.js ≥ 22</span><span>Updated 2026-10-04</span></div>
+      </header>
+
+      <div class="guide-layout">
+        <aside class="toc" aria-label="On this page">
+          <strong>On this page</strong>
+          <a href="#identity">The certificate identifies the service, not just a hostname.</a>
+          <a href="#inbound">Inbound connections must authenticate as trusted workloads.</a>
+          <a href="#outbound">Outbound mesh calls verify the expected destination service.</a>
+          <a href="#rotation">Rotate certificate material without restarting the process.</a>
+          <a href="#boundary">Know what the runtime does not claim.</a>
+        </aside>
+        <article class="guide-article">
+        <section id="identity">
+          <div class="guide-kicker">01 · identity</div>
+          <h2>The certificate identifies the service, not just a hostname.</h2>
+          <p>OpenMesh expects a workload certificate to carry a URI SAN such as <code>spiffe://mesh.example.internal/service/payments</code>. The configured local service name and trust domain are validated against that identity before the runtime begins serving protected traffic.</p>
+<div class="code-card"><pre><code>const payments = openmesh({
+  service: 'payments',
+  identity: {
+    trustDomain: 'mesh.example.internal',
+    ca,
+    cert,
+    key,
+    allow: ['gateway']
+  }
+});</code></pre></div>
+<p>The identity is an application boundary: the Node.js runtime knows which service it claims to be and can reject certificate material that does not match that claim.</p>
+        </section>
+        <section id="inbound">
+          <div class="guide-kicker">02 · inbound</div>
+          <h2>Inbound connections must authenticate as trusted workloads.</h2>
+          <p>When workload identity is enabled, the server requires a trusted client certificate. OpenMesh extracts the caller's SPIFFE-style service identity into request state. An optional allow-list can restrict inbound calls to named services such as <code>gateway</code> or <code>billing-worker</code>.</p>
+<p>This is service authentication and authorization at the runtime layer. It does not replace business-level user authorization inside the route.</p>
+        </section>
+        <section id="outbound">
+          <div class="guide-kicker">03 · outbound</div>
+          <h2>Outbound mesh calls verify the expected destination service.</h2>
+          <p>An outbound <code>app.mesh('payments')</code> call automatically presents the caller's workload certificate when identity is configured. The TLS connection verifies both the trust chain and that the destination certificate identifies the expected service.</p>
+<p>That closes an important gap in generic HTTPS: a certificate signed by the right CA is not enough if the connection reached the wrong workload.</p>
+        </section>
+        <section id="rotation">
+          <div class="guide-kicker">04 · rotation</div>
+          <h2>Rotate certificate material without restarting the process.</h2>
+          <p><code>app.workload.rotate(...)</code> can replace already-issued workload certificate material. New inbound connections use the replaced server secure context; outbound service pools rotate their TLS agents and can drain old agents with a grace period.</p>
+<p>Rotation is deliberately separate from issuance. OpenMesh consumes certificate material; it does not run a certificate authority or decide how revocation is distributed.</p>
+        </section>
+        <section id="boundary">
+          <div class="guide-kicker">05 · boundary</div>
+          <h2>Know what the runtime does not claim.</h2>
+          <ul>
+<li>It does not issue workload certificates.</li>
+<li>It does not distribute certificate revocation state.</li>
+<li>It does not govern a trust domain for you.</li>
+<li>It does not transparently intercept arbitrary process traffic.</li>
+<li>It does not replace Kubernetes network policy or a CNI.</li>
+</ul>
+<p>The model is useful when Node.js applications want explicit service identities and mTLS inside the same runtime that owns service-to-service calls. See the <a href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/mesh-runtime.md#workload-identity-and-mtls">workload identity reference</a> for the exact supported configuration.</p>
+        </section>
+          <section>
+            <div class="guide-kicker">Continue</div>
+            <h2>Related OpenMesh guides.</h2>
+            <div class="next-guides">
+          <a href="/guides/application-native-service-mesh/"><strong>Application-native service mesh</strong><span>See where identity fits beside discovery, traffic policy and resilience.</span></a>
+          <a href="/guides/peer-routing/"><strong>Peer routing and resilience</strong><span>Understand the service call path that the authenticated transport protects.</span></a>
+            </div>
+          </section>
+        </article>
+      </div>
+    </main>
+    <footer class="guide-footer">
+      <span>OpenMesh for Node.js · <code>openmesh-node</code> · v0.5.0 · MIT</span>
+      <div><a href="/">home</a><a href="/docs/">docs</a><a href="https://www.npmjs.com/package/openmesh-node">npm</a><a href="https://github.com/yaohuangguan/openmesh-node">source</a></div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Node.js Service Discovery with Leases &amp; SSE | OpenMesh</title>
+    <meta name="description" content="A practical model for Node.js service registration and discovery using expiring leases, monotonic revisions, resumable SSE watches and pluggable durable adapters." />
+    <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
+    <meta name="theme-color" content="#05070a" />
+    <link rel="canonical" href="https://openmesh-node.vercel.app/guides/service-discovery/" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="OpenMesh for Node.js" />
+    <meta property="og:url" content="https://openmesh-node.vercel.app/guides/service-discovery/" />
+    <meta property="og:title" content="Node.js Service Discovery with Leases &amp; SSE | OpenMesh" />
+    <meta property="og:description" content="A practical model for Node.js service registration and discovery using expiring leases, monotonic revisions, resumable SSE watches and pluggable durable adapters." />
+    <meta property="og:image" content="https://openmesh-node.vercel.app/og/openmesh-node.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Node.js Service Discovery with Leases &amp; SSE | OpenMesh" />
+    <meta name="twitter:description" content="A practical model for Node.js service registration and discovery using expiring leases, monotonic revisions, resumable SSE watches and pluggable durable adapters." />
+    <meta name="twitter:image" content="https://openmesh-node.vercel.app/og/openmesh-node.png" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebPage","@id":"https://openmesh-node.vercel.app/guides/service-discovery/#webpage","url":"https://openmesh-node.vercel.app/guides/service-discovery/","name":"Node.js Service Discovery with Leases & SSE | OpenMesh","description":"A practical model for Node.js service registration and discovery using expiring leases, monotonic revisions, resumable SSE watches and pluggable durable adapters.","headline":"Service discovery should be versioned runtime state.","datePublished":"2026-10-04","dateModified":"2026-10-04","isPartOf":{"@id":"https://openmesh-node.vercel.app/#website"},"about":{"@id":"https://openmesh-node.vercel.app/#software"},"inLanguage":"en","primaryImageOfPage":{"@type":"ImageObject","url":"https://openmesh-node.vercel.app/og/openmesh-node.png","width":1200,"height":630}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"OpenMesh for Node.js","item":"https://openmesh-node.vercel.app/"},{"@type":"ListItem","position":2,"name":"Guides","item":"https://openmesh-node.vercel.app/guides/"},{"@type":"ListItem","position":3,"name":"Node.js service discovery","item":"https://openmesh-node.vercel.app/guides/service-discovery/"}]}]}</script>
+    <link rel="stylesheet" href="/src/guide.css" />
+  </head>
+  <body>
+    <header class="guide-topbar">
+      <a class="brand" href="/" aria-label="OpenMesh for Node.js home">
+        <span class="brand-glyph" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>OpenMesh</span>
+      </a>
+      <nav aria-label="Guide navigation"><a href="/docs/">Docs</a><a href="/guides/">Guides</a><a href="https://github.com/yaohuangguan/openmesh-node">GitHub ↗</a></nav>
+    </header>
+    <main class="guide-shell">
+      <header class="guide-hero">
+        <div class="breadcrumb"><a href="/">OpenMesh</a><span>/</span><a href="/guides/">Guides</a><span>/</span><span>Node.js service discovery</span></div>
+        <div class="eyebrow">Node.js service discovery</div>
+        <h1>Service discovery should be versioned runtime state.</h1>
+        <p>A list of service URLs is only correct at one instant. OpenMesh models discovery as changing state: instances own expiring leases, membership snapshots carry revisions, and consumers receive push-first updates that can resume after reconnects.</p>
+        <div class="article-meta"><span>OpenMesh 0.5</span><span>Node.js ≥ 22</span><span>Updated 2026-10-04</span></div>
+      </header>
+
+      <div class="guide-layout">
+        <aside class="toc" aria-label="On this page">
+          <strong>On this page</strong>
+          <a href="#leases">Registration is a lease, not a permanent row.</a>
+          <a href="#snapshots">Discovery returns snapshots with monotonic revisions.</a>
+          <a href="#watches">Steady-state topology updates are push-first.</a>
+          <a href="#durability">The protocol is separate from the storage adapter.</a>
+          <a href="#safety">A broken update should not erase the last good topology.</a>
+        </aside>
+        <article class="guide-article">
+        <section id="leases">
+          <div class="guide-kicker">01 · registration</div>
+          <h2>Registration is a lease, not a permanent row.</h2>
+          <p>An instance that crashes cannot reliably run a cleanup callback. That is why OpenMesh registrations expire unless the owner renews them. A healthy service heartbeats its lease; graceful shutdown removes the lease before request draining so new callers stop selecting the instance while in-flight work can finish.</p>
+<p>This model makes liveness an explicit property of the registry rather than an assumption hidden inside a deployment script.</p>
+        </section>
+        <section id="snapshots">
+          <div class="guide-kicker">02 · consistency</div>
+          <h2>Discovery returns snapshots with monotonic revisions.</h2>
+          <p>Membership can change while a caller is reading it. OpenMesh associates each service membership snapshot with a monotonic revision. Pagination can restart when the revision changes instead of returning a mixed view assembled from two different topologies.</p>
+<div class="code-card"><pre><code>{
+  "service": "users",
+  "revision": 18,
+  "instances": [
+    { "id": "users-a", "url": "http://10.0.0.12:3000" },
+    { "id": "users-b", "url": "http://10.0.0.13:3000" }
+  ]
+}</code></pre></div>
+<p>The revision is also useful to downstream routing logic: it can tell whether an update is newer without diffing arbitrary arrays.</p>
+        </section>
+        <section id="watches">
+          <div class="guide-kicker">03 · push delivery</div>
+          <h2>Steady-state topology updates are push-first.</h2>
+          <p>OpenMesh uses authenticated Server-Sent Events for service and configuration watches. A watcher receives an initial full snapshot and later snapshots when state changes. Heartbeat comments keep idle streams alive.</p>
+<p>SSE events carry IDs. On reconnect the client sends <code>Last-Event-ID</code>; if state has not advanced, the control plane can avoid a duplicate snapshot. If state did advance, the client receives the complete current snapshot rather than depending on a potentially lossy delta history.</p>
+<div class="callout"><strong>Why full snapshots?</strong><p>For service membership, a complete versioned state is often easier to recover and validate than an unbounded log of add/remove deltas.</p></div>
+        </section>
+        <section id="durability">
+          <div class="guide-kicker">04 · storage</div>
+          <h2>The protocol is separate from the storage adapter.</h2>
+          <p>The bundled in-memory registry is useful for local clusters and tests. Production systems that need shared durable state can use the Redis adapters or implement the public registry/config contracts against another store.</p>
+<p>That separation matters for portability: the application-facing discovery semantics stay the same while durability, replication and infrastructure ownership can change underneath.</p>
+        </section>
+        <section id="safety">
+          <div class="guide-kicker">05 · failure handling</div>
+          <h2>A broken update should not erase the last good topology.</h2>
+          <p>Discovery, configuration and traffic policy updates are validated before they replace runtime state. Invalid or unavailable updates preserve the last accepted snapshot. The service relationship therefore degrades from known-good state rather than immediately adopting malformed control-plane data.</p>
+<p>Discovery is only one part of safe distributed calls. The resulting peer set feeds traffic targeting, peer selection, admission, deadlines, retries and circuits. Continue with the <a href="/guides/peer-routing/">peer routing guide</a>, or read the <a href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/services.md">control-plane protocol documentation</a>.</p>
+        </section>
+          <section>
+            <div class="guide-kicker">Continue</div>
+            <h2>Related OpenMesh guides.</h2>
+            <div class="next-guides">
+          <a href="/guides/peer-routing/"><strong>Peer routing and resilience</strong><span>What happens after discovery supplies a changing set of eligible peers.</span></a>
+          <a href="/guides/application-native-service-mesh/"><strong>Application-native service mesh</strong><span>How discovery becomes one part of a managed service relationship.</span></a>
+            </div>
+          </section>
+        </article>
+      </div>
+    </main>
+    <footer class="guide-footer">
+      <span>OpenMesh for Node.js · <code>openmesh-node</code> · v0.5.0 · MIT</span>
+      <div><a href="/">home</a><a href="/docs/">docs</a><a href="https://www.npmjs.com/package/openmesh-node">npm</a><a href="https://github.com/yaohuangguan/openmesh-node">source</a></div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Node.js Microservices &amp; Service Mesh Guides | OpenMesh</title>
+    <meta name="description" content="Technical guides to Node.js service runtimes, application-native service mesh design, service discovery, peer routing, resilience and mTLS workload identity." />
+    <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
+    <meta name="theme-color" content="#05070a" />
+    <link rel="canonical" href="https://openmesh-node.vercel.app/guides/" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="OpenMesh for Node.js" />
+    <meta property="og:url" content="https://openmesh-node.vercel.app/guides/" />
+    <meta property="og:title" content="Node.js Microservices &amp; Service Mesh Guides | OpenMesh" />
+    <meta property="og:description" content="Technical guides to Node.js service runtimes, application-native service mesh design, service discovery, peer routing, resilience and mTLS workload identity." />
+    <meta property="og:image" content="https://openmesh-node.vercel.app/og/openmesh-node.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Node.js Microservices &amp; Service Mesh Guides | OpenMesh" />
+    <meta name="twitter:description" content="Technical guides to Node.js service runtimes, application-native service mesh design, service discovery, peer routing, resilience and mTLS workload identity." />
+    <meta name="twitter:image" content="https://openmesh-node.vercel.app/og/openmesh-node.png" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebPage","@id":"https://openmesh-node.vercel.app/guides/#webpage","url":"https://openmesh-node.vercel.app/guides/","name":"Node.js Microservices & Service Mesh Guides | OpenMesh","description":"Technical guides to Node.js service runtimes, application-native service mesh design, service discovery, peer routing, resilience and mTLS workload identity.","headline":"Node.js runtime and service mesh guides.","datePublished":"2026-10-04","dateModified":"2026-10-04","isPartOf":{"@id":"https://openmesh-node.vercel.app/#website"},"about":{"@id":"https://openmesh-node.vercel.app/#software"},"inLanguage":"en","primaryImageOfPage":{"@type":"ImageObject","url":"https://openmesh-node.vercel.app/og/openmesh-node.png","width":1200,"height":630}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"OpenMesh for Node.js","item":"https://openmesh-node.vercel.app/"},{"@type":"ListItem","position":2,"name":"Guides","item":"https://openmesh-node.vercel.app/guides/"}]}]}</script>
+    <link rel="stylesheet" href="/src/guide.css" />
+  </head>
+  <body class="guides-index">
+    <header class="guide-topbar">
+      <a class="brand" href="/" aria-label="OpenMesh for Node.js home">
+        <span class="brand-glyph" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>OpenMesh</span>
+      </a>
+      <nav aria-label="Guide navigation"><a href="/docs/">Docs</a><a href="/guides/">Guides</a><a href="https://github.com/yaohuangguan/openmesh-node">GitHub ↗</a></nav>
+    </header>
+    <main class="guide-shell">
+      <header class="guide-hero">
+        <div class="breadcrumb"><a href="/">OpenMesh</a><span>/</span><span>Guides</span></div>
+        <div class="eyebrow">Technical guides</div>
+        <h1>Node.js runtime and service mesh guides.</h1>
+        <p>Deep, implementation-focused explanations of the distributed-system problems OpenMesh 0.5 solves inside a TypeScript application runtime.</p>
+        <div class="article-meta"><span>OpenMesh 0.5.0</span><span>TypeScript</span><span>Node.js ≥ 22</span></div>
+      </header>
+      <div class="guide-layout">
+        <section class="guide-cards" aria-label="OpenMesh technical guides">
+        <a class="guide-card" href="/guides/nodejs-service-runtime/">
+          <span>01</span>
+          <h2>Node.Js Service Runtime</h2>
+          <p>How OpenMesh combines native Node.js HTTP, TypeScript contracts, application lifecycle, database resources and an incremental path to distributed services.</p>
+        </a>
+        <a class="guide-card" href="/guides/application-native-service-mesh/">
+          <span>02</span>
+          <h2>Application-Native Service Mesh</h2>
+          <p>OpenMesh application-native service mesh for Node.js: live discovery, traffic policy, backpressure, retries, circuits, mTLS and observability without a sidecar hop.</p>
+        </a>
+        <a class="guide-card" href="/guides/service-discovery/">
+          <span>03</span>
+          <h2>Node.Js Service Discovery</h2>
+          <p>A practical model for Node.js service registration and discovery using expiring leases, monotonic revisions, resumable SSE watches and pluggable durable adapters.</p>
+        </a>
+        <a class="guide-card" href="/guides/peer-routing/">
+          <span>04</span>
+          <h2>Node.Js Peer Routing</h2>
+          <p>Node.js peer routing with OpenMesh: traffic subsets, rendezvous hashing, power-of-two choices, deadlines, safe retries, circuits, backpressure and streaming.</p>
+        </a>
+        <a class="guide-card" href="/guides/workload-identity-mtls/">
+          <span>05</span>
+          <h2>Mtls Workload Identity</h2>
+          <p>How OpenMesh uses SPIFFE-style service identities, mutual TLS, inbound service authorization, outbound identity verification and certificate rotation in Node.js.</p>
+        </a>
+        </section>
+      </div>
+    </main>
+    <footer class="guide-footer">
+      <span>OpenMesh for Node.js · <code>openmesh-node</code> · v0.5.0 · MIT</span>
+      <div><a href="/">home</a><a href="/docs/">docs</a><a href="https://www.npmjs.com/package/openmesh-node">npm</a><a href="https://github.com/yaohuangguan/openmesh-node">source</a></div>
+    </footer>
+  </body>
+</html>

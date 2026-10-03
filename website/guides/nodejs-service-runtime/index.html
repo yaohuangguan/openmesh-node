@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Node.js Service Runtime in TypeScript | OpenMesh</title>
+    <meta name="description" content="How OpenMesh combines native Node.js HTTP, TypeScript contracts, application lifecycle, database resources and an incremental path to distributed services." />
+    <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
+    <meta name="theme-color" content="#05070a" />
+    <link rel="canonical" href="https://openmesh-node.vercel.app/guides/nodejs-service-runtime/" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="OpenMesh for Node.js" />
+    <meta property="og:url" content="https://openmesh-node.vercel.app/guides/nodejs-service-runtime/" />
+    <meta property="og:title" content="Node.js Service Runtime in TypeScript | OpenMesh" />
+    <meta property="og:description" content="How OpenMesh combines native Node.js HTTP, TypeScript contracts, application lifecycle, database resources and an incremental path to distributed services." />
+    <meta property="og:image" content="https://openmesh-node.vercel.app/og/openmesh-node.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Node.js Service Runtime in TypeScript | OpenMesh" />
+    <meta name="twitter:description" content="How OpenMesh combines native Node.js HTTP, TypeScript contracts, application lifecycle, database resources and an incremental path to distributed services." />
+    <meta name="twitter:image" content="https://openmesh-node.vercel.app/og/openmesh-node.png" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebPage","@id":"https://openmesh-node.vercel.app/guides/nodejs-service-runtime/#webpage","url":"https://openmesh-node.vercel.app/guides/nodejs-service-runtime/","name":"Node.js Service Runtime in TypeScript | OpenMesh","description":"How OpenMesh combines native Node.js HTTP, TypeScript contracts, application lifecycle, database resources and an incremental path to distributed services.","headline":"A Node.js service runtime that starts as an API.","datePublished":"2026-10-04","dateModified":"2026-10-04","isPartOf":{"@id":"https://openmesh-node.vercel.app/#website"},"about":{"@id":"https://openmesh-node.vercel.app/#software"},"inLanguage":"en","primaryImageOfPage":{"@type":"ImageObject","url":"https://openmesh-node.vercel.app/og/openmesh-node.png","width":1200,"height":630}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"OpenMesh for Node.js","item":"https://openmesh-node.vercel.app/"},{"@type":"ListItem","position":2,"name":"Guides","item":"https://openmesh-node.vercel.app/guides/"},{"@type":"ListItem","position":3,"name":"Node.js service runtime","item":"https://openmesh-node.vercel.app/guides/nodejs-service-runtime/"}]}]}</script>
+    <link rel="stylesheet" href="/src/guide.css" />
+  </head>
+  <body>
+    <header class="guide-topbar">
+      <a class="brand" href="/" aria-label="OpenMesh for Node.js home">
+        <span class="brand-glyph" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>OpenMesh</span>
+      </a>
+      <nav aria-label="Guide navigation"><a href="/docs/">Docs</a><a href="/guides/">Guides</a><a href="https://github.com/yaohuangguan/openmesh-node">GitHub ↗</a></nav>
+    </header>
+    <main class="guide-shell">
+      <header class="guide-hero">
+        <div class="breadcrumb"><a href="/">OpenMesh</a><span>/</span><a href="/guides/">Guides</a><span>/</span><span>Node.js service runtime</span></div>
+        <div class="eyebrow">Node.js service runtime</div>
+        <h1>A Node.js service runtime that starts as an API.</h1>
+        <p>An HTTP framework answers how a request reaches a handler. A service runtime also answers what happens when the application gains databases, downstream services, topology changes, overload, identity and telemetry. OpenMesh keeps those concerns in one TypeScript runtime without forcing them into the first hello-world service.</p>
+        <div class="article-meta"><span>OpenMesh 0.5</span><span>Node.js ≥ 22</span><span>Updated 2026-10-04</span></div>
+      </header>
+
+      <div class="guide-layout">
+        <aside class="toc" aria-label="On this page">
+          <strong>On this page</strong>
+          <a href="#runtime-not-framework">The useful boundary is larger than the router.</a>
+          <a href="#http">Keep the request path inside Node.js.</a>
+          <a href="#database">Your database client remains your database client.</a>
+          <a href="#grow">When the application splits, the programming model grows.</a>
+          <a href="#adoption">Use the layer that matches the system you actually have.</a>
+        </aside>
+        <article class="guide-article">
+        <section id="runtime-not-framework">
+          <div class="guide-kicker">01 · boundary</div>
+          <h2>The useful boundary is larger than the router.</h2>
+          <p>Most Node.js applications begin with a small set of routes and middleware. That is a good default. Problems appear later, when the same application has to register itself, discover another service, survive a slow dependency, propagate trace context and shut down without advertising a half-dead instance.</p>
+<p>OpenMesh treats the <strong>application lifecycle</strong> as the integration boundary. The HTTP server, service registration, database resources, managed peer pools, telemetry adapters and workload certificates can all participate in startup and shutdown. You can still use only the HTTP layer; the other layers are opt-in.</p>
+<div class="callout"><strong>Core idea</strong><p>Start with an ordinary API. Add runtime capabilities when the system creates the problem that needs them.</p></div>
+        </section>
+        <section id="http">
+          <div class="guide-kicker">02 · native HTTP</div>
+          <h2>Keep the request path inside Node.js.</h2>
+          <p>OpenMesh owns a normal Node.js HTTP server. Application traffic is not proxied through a second runtime. Routing, middleware, Standard Schema-compatible validation, response contracts and graceful lifecycle hooks execute in-process.</p>
+<div class="code-card"><pre><code>import openmesh from 'openmesh-node';
+import { bodyParser } from 'openmesh-node/plugins';
+
+const app = openmesh();
+app.use(bodyParser());
+
+app.get('/users/:id', ({ params }) =&gt; ({
+  id: params.id
+}));
+
+await app.listen({ port: 3000 });</code></pre></div>
+<p>The package ships ESM, CommonJS and generated TypeScript declarations. The native HTTP core has zero runtime dependencies; integrations such as Redis and OpenTelemetry remain optional boundaries.</p>
+        </section>
+        <section id="database">
+          <div class="guide-kicker">03 · resources</div>
+          <h2>Your database client remains your database client.</h2>
+          <p>A service runtime does not need to invent a query language. <code>openmesh-node/db</code> wraps the lifecycle of the client you already chose and preserves its type. Prisma, Drizzle, Kysely, TypeORM, MikroORM, Sequelize and lower-level clients can keep their native APIs.</p>
+<div class="code-card"><pre><code>import { database } from 'openmesh-node/db';
+
+const db = database(prisma, {
+  connect: client =&gt; client.$connect(),
+  disconnect: client =&gt; client.$disconnect(),
+  transaction: (client, work) =&gt; client.$transaction(work)
+});
+
+app.register(db);
+app.get('/users', () =&gt; db.client.user.findMany());</code></pre></div>
+<p>This keeps connection setup, health, transactions and shutdown explicit without turning the runtime into an ORM.</p>
+        </section>
+        <section id="grow">
+          <div class="guide-kicker">04 · distribution</div>
+          <h2>When the application splits, the programming model grows.</h2>
+          <p>The preferred service-to-service surface in OpenMesh 0.5 is <code>app.mesh(name)</code>. A handle is lazy. The first real call creates one managed service relationship and reuses its discovery watch, pressure budget, circuit state, traffic policy and transport resources.</p>
+<div class="code-card"><pre><code>const payments = app.mesh('payments');
+
+const charge = await payments.post('/charges', {
+  key: user.id,
+  body: {
+    userId: user.id,
+    amount: order.total
+  }
+});</code></pre></div>
+<p>The point is not to hide the network. The point is to stop every caller from re-implementing the same discovery, deadline, retry and observability glue with slightly different failure semantics.</p>
+        </section>
+        <section id="adoption">
+          <div class="guide-kicker">05 · adoption</div>
+          <h2>Use the layer that matches the system you actually have.</h2>
+          <div class="matrix"><table><thead><tr><th>Stage</th><th>OpenMesh surface</th><th>What stays optional</th></tr></thead><tbody>
+<tr><td>Single API</td><td>HTTP runtime + plugins</td><td>control plane, mesh, Redis, telemetry</td></tr>
+<tr><td>API + database</td><td><code>openmesh-node/db</code></td><td>mesh and discovery</td></tr>
+<tr><td>Several services</td><td><code>app.mesh()</code> + control plane</td><td>mTLS, Redis, advanced policy</td></tr>
+<tr><td>Production mesh</td><td>traffic policy, backpressure, identity, observability</td><td>components you do not need</td></tr>
+</tbody></table></div>
+<p>OpenMesh is intentionally not a hidden cluster platform. Certificate issuance, orchestration, DNS, infrastructure provisioning and Kubernetes networking remain external responsibilities. That boundary makes the runtime easier to reason about and keeps adoption incremental.</p>
+<p>Read the <a href="/docs/">OpenMesh 0.5 documentation</a> or the <a href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/architecture-0.5.md">full 0.5 architecture</a> for exact APIs and limits.</p>
+        </section>
+          <section>
+            <div class="guide-kicker">Continue</div>
+            <h2>Related OpenMesh guides.</h2>
+            <div class="next-guides">
+          <a href="/guides/application-native-service-mesh/"><strong>Application-native service mesh</strong><span>How discovery, policy, retries and identity live in the Node.js runtime.</span></a>
+          <a href="/guides/service-discovery/"><strong>Node.js service discovery</strong><span>Leases, revisions and push watches for changing service topology.</span></a>
+            </div>
+          </section>
+        </article>
+      </div>
+    </main>
+    <footer class="guide-footer">
+      <span>OpenMesh for Node.js · <code>openmesh-node</code> · v0.5.0 · MIT</span>
+      <div><a href="/">home</a><a href="/docs/">docs</a><a href="https://www.npmjs.com/package/openmesh-node">npm</a><a href="https://github.com/yaohuangguan/openmesh-node">source</a></div>
+    </footer>
+  </body>
+</html>

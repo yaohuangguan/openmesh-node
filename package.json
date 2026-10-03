@@ -1,7 +1,7 @@
 {
   "name": "openmesh-node",
   "version": "0.5.0",
-  "description": "A TypeScript-first Node.js backend runtime for typed APIs and application-native microservices with database lifecycle, service discovery, traffic policy, backpressure, and streaming.",
+  "description": "TypeScript-first Node.js service runtime for native HTTP APIs and application-native microservices with discovery, traffic policy, resilience, mTLS and observability.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/yaohuangguan/openmesh-node.git"

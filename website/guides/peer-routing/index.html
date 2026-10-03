@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Node.js Peer Routing, Retries &amp; Circuit Breaking | OpenMesh</title>
+    <meta name="description" content="Node.js peer routing with OpenMesh: traffic subsets, rendezvous hashing, power-of-two choices, deadlines, safe retries, circuits, backpressure and streaming." />
+    <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
+    <meta name="theme-color" content="#05070a" />
+    <link rel="canonical" href="https://openmesh-node.vercel.app/guides/peer-routing/" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="OpenMesh for Node.js" />
+    <meta property="og:url" content="https://openmesh-node.vercel.app/guides/peer-routing/" />
+    <meta property="og:title" content="Node.js Peer Routing, Retries &amp; Circuit Breaking | OpenMesh" />
+    <meta property="og:description" content="Node.js peer routing with OpenMesh: traffic subsets, rendezvous hashing, power-of-two choices, deadlines, safe retries, circuits, backpressure and streaming." />
+    <meta property="og:image" content="https://openmesh-node.vercel.app/og/openmesh-node.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Node.js Peer Routing, Retries &amp; Circuit Breaking | OpenMesh" />
+    <meta name="twitter:description" content="Node.js peer routing with OpenMesh: traffic subsets, rendezvous hashing, power-of-two choices, deadlines, safe retries, circuits, backpressure and streaming." />
+    <meta name="twitter:image" content="https://openmesh-node.vercel.app/og/openmesh-node.png" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebPage","@id":"https://openmesh-node.vercel.app/guides/peer-routing/#webpage","url":"https://openmesh-node.vercel.app/guides/peer-routing/","name":"Node.js Peer Routing, Retries & Circuit Breaking | OpenMesh","description":"Node.js peer routing with OpenMesh: traffic subsets, rendezvous hashing, power-of-two choices, deadlines, safe retries, circuits, backpressure and streaming.","headline":"Peer routing needs policy, not just a random URL.","datePublished":"2026-10-04","dateModified":"2026-10-04","isPartOf":{"@id":"https://openmesh-node.vercel.app/#website"},"about":{"@id":"https://openmesh-node.vercel.app/#software"},"inLanguage":"en","primaryImageOfPage":{"@type":"ImageObject","url":"https://openmesh-node.vercel.app/og/openmesh-node.png","width":1200,"height":630}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"OpenMesh for Node.js","item":"https://openmesh-node.vercel.app/"},{"@type":"ListItem","position":2,"name":"Guides","item":"https://openmesh-node.vercel.app/guides/"},{"@type":"ListItem","position":3,"name":"Node.js peer routing","item":"https://openmesh-node.vercel.app/guides/peer-routing/"}]}]}</script>
+    <link rel="stylesheet" href="/src/guide.css" />
+  </head>
+  <body>
+    <header class="guide-topbar">
+      <a class="brand" href="/" aria-label="OpenMesh for Node.js home">
+        <span class="brand-glyph" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>OpenMesh</span>
+      </a>
+      <nav aria-label="Guide navigation"><a href="/docs/">Docs</a><a href="/guides/">Guides</a><a href="https://github.com/yaohuangguan/openmesh-node">GitHub ↗</a></nav>
+    </header>
+    <main class="guide-shell">
+      <header class="guide-hero">
+        <div class="breadcrumb"><a href="/">OpenMesh</a><span>/</span><a href="/guides/">Guides</a><span>/</span><span>Node.js peer routing</span></div>
+        <div class="eyebrow">Node.js peer routing</div>
+        <h1>Peer routing needs policy, not just a random URL.</h1>
+        <p>Once discovery returns several healthy instances, the caller still has to choose one, enforce capacity, handle timeouts and decide whether a failed attempt is safe to replay. OpenMesh keeps those choices in one peer data plane.</p>
+        <div class="article-meta"><span>OpenMesh 0.5</span><span>Node.js ≥ 22</span><span>Updated 2026-10-04</span></div>
+      </header>
+
+      <div class="guide-layout">
+        <aside class="toc" aria-label="On this page">
+          <strong>On this page</strong>
+          <a href="#selection">Keyed and unkeyed traffic need different selectors.</a>
+          <a href="#deadline">One deadline covers queueing, transport and retries.</a>
+          <a href="#retry">Retry policy is constrained by method semantics.</a>
+          <a href="#pressure">Overload should create a bounded queue, not infinite work.</a>
+          <a href="#streaming">A stream cannot be safely replayed after it is committed.</a>
+        </aside>
+        <article class="guide-article">
+        <section id="selection">
+          <div class="guide-kicker">01 · selection</div>
+          <h2>Keyed and unkeyed traffic need different selectors.</h2>
+          <p>Keyed traffic often wants affinity. OpenMesh uses rendezvous hashing so the same key tends to select the same peer while minimizing remapping when membership changes. That works well for cache affinity, user/session locality and other stable-key workloads.</p>
+<p>Unkeyed traffic defaults to power-of-two choices using available peer health/load state. Sampling two candidates and choosing the better one avoids the blind spots of pure round-robin while staying inexpensive.</p>
+<p>Selection happens <em>after</em> traffic policy narrows the eligible subset, so a peer algorithm cannot accidentally escape a canary, metadata or locality rule.</p>
+        </section>
+        <section id="deadline">
+          <div class="guide-kicker">02 · deadline</div>
+          <h2>One deadline covers queueing, transport and retries.</h2>
+          <p>A timeout applied only to the socket does not bound total caller latency. A request may spend time waiting for an admission slot and then consume several attempts. OpenMesh treats the deadline as a budget for the complete call path.</p>
+<p>If the budget expires in the queue, no network request should be started. If the budget is nearly exhausted after an attempt, a retry should not begin just because its individual socket timeout would fit.</p>
+        </section>
+        <section id="retry">
+          <div class="guide-kicker">03 · retry safety</div>
+          <h2>Retry policy is constrained by method semantics.</h2>
+          <p>Retries can turn a transient transport failure into a duplicated side effect. OpenMesh therefore does not implicitly retry unsafe methods such as POST or PATCH. A caller can opt in when it has an idempotency key or an application guarantee that makes replay safe.</p>
+<p>Retries stay inside the traffic subset selected for the request. Circuit state is per peer, so a failing instance can be bypassed without treating the whole service as unhealthy.</p>
+        </section>
+        <section id="pressure">
+          <div class="guide-kicker">04 · pressure</div>
+          <h2>Overload should create a bounded queue, not infinite work.</h2>
+          <p>A managed service pool can set an in-flight limit and a bounded FIFO queue. Requests beyond those limits fail predictably rather than accumulating unbounded promises and memory. Optional adaptive concurrency can adjust admission from observed success and latency signals.</p>
+<div class="matrix"><table><thead><tr><th>Primitive</th><th>Purpose</th></tr></thead><tbody>
+<tr><td><code>maxInflight</code></td><td>hard cap on concurrent admitted work</td></tr>
+<tr><td><code>maxQueue</code></td><td>bound waiting work and memory</td></tr>
+<tr><td>circuit state</td><td>isolate repeatedly failing peers</td></tr>
+<tr><td>adaptive concurrency</td><td>change admission based on observed runtime signals</td></tr>
+<tr><td>deadline</td><td>bound total end-to-end waiting and attempts</td></tr>
+</tbody></table></div>
+        </section>
+        <section id="streaming">
+          <div class="guide-kicker">05 · streaming</div>
+          <h2>A stream cannot be safely replayed after it is committed.</h2>
+          <p>Buffered requests and long-lived streams have different failure semantics. For SSE, LLM streams and other streaming bodies, OpenMesh commits the response once successful non-5xx headers are handed to the caller. If the body later fails, the error is surfaced to the consumer and is not replayed against another peer.</p>
+<p>This explicit no-replay rule prevents duplicated or interleaved stream output. Read the <a href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/distributed.md">distributed peer documentation</a> for the lower-level options and telemetry fields.</p>
+        </section>
+          <section>
+            <div class="guide-kicker">Continue</div>
+            <h2>Related OpenMesh guides.</h2>
+            <div class="next-guides">
+          <a href="/guides/service-discovery/"><strong>Node.js service discovery</strong><span>How the peer set stays current before selection begins.</span></a>
+          <a href="/guides/application-native-service-mesh/"><strong>Application-native service mesh</strong><span>How peer routing becomes a reusable application service relationship.</span></a>
+            </div>
+          </section>
+        </article>
+      </div>
+    </main>
+    <footer class="guide-footer">
+      <span>OpenMesh for Node.js · <code>openmesh-node</code> · v0.5.0 · MIT</span>
+      <div><a href="/">home</a><a href="/docs/">docs</a><a href="https://www.npmjs.com/package/openmesh-node">npm</a><a href="https://github.com/yaohuangguan/openmesh-node">source</a></div>
+    </footer>
+  </body>
+</html>
