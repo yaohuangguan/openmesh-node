@@ -1,7 +1,7 @@
 {
   "name": "openmesh-node",
   "version": "0.4.0",
-  "description": "A TypeScript-first Node.js service runtime with native HTTP, peer routing, service discovery, backpressure, streaming, and durable control-plane adapters.",
+  "description": "A TypeScript-first Node.js backend runtime for typed APIs and application-native microservices with database lifecycle, service discovery, traffic policy, backpressure, and streaming.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/yaohuangguan/openmesh-node.git"
@@ -31,6 +31,26 @@
       "require": {
         "types": "./dist/types/plugins/index.d.ts",
         "default": "./dist/cjs/plugins/index.js"
+      }
+    },
+    "./http": {
+      "import": {
+        "types": "./dist/types/http/index.d.mts",
+        "default": "./dist/esm/http/index.js"
+      },
+      "require": {
+        "types": "./dist/types/http/index.d.ts",
+        "default": "./dist/cjs/http/index.js"
+      }
+    },
+    "./db": {
+      "import": {
+        "types": "./dist/types/db/index.d.mts",
+        "default": "./dist/esm/db/index.js"
+      },
+      "require": {
+        "types": "./dist/types/db/index.d.ts",
+        "default": "./dist/cjs/db/index.js"
       }
     },
     "./mesh": {
@@ -128,6 +148,7 @@
   "devDependencies": {
     "@fastify/cors": "11.3.0",
     "@fastify/helmet": "13.1.1",
+    "@peculiar/x509": "^2.1.0",
     "@types/node": "^24.0.0",
     "autocannon": "8.0.0",
     "cors": "2.8.6",
@@ -136,21 +157,30 @@
     "helmet": "8.3.0",
     "koa": "3.2.1",
     "redis": "^6.3.0",
+    "reflect-metadata": "^0.2.2",
     "typescript": "7.0.2"
   },
   "keywords": [
+    "nodejs",
+    "typescript",
+    "service-mesh",
+    "mtls",
+    "spiffe",
+    "workload-identity",
+    "microservices",
+    "service-discovery",
+    "traffic-management",
+    "load-balancing",
+    "backpressure",
+    "circuit-breaker",
+    "distributed-systems",
+    "opentelemetry",
+    "streaming",
+    "redis",
     "http",
     "framework",
-    "middleware",
-    "node",
-    "fastify",
-    "express",
-    "koa",
-    "plugins",
-    "microservices",
-    "distributed",
-    "peer-to-peer",
-    "service-discovery"
+    "database",
+    "orm"
   ],
   "license": "MIT",
   "publishConfig": {

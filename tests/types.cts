@@ -1,5 +1,6 @@
 import openmesh = require('openmesh-node');
 import plugins = require('openmesh-node/plugins');
+import db = require('openmesh-node/db');
 import mesh = require('openmesh-node/mesh');
 import services = require('openmesh-node/services');
 import otel = require('openmesh-node/otel');
@@ -37,3 +38,106 @@ telemetry.onAppEvent({ type: 'server.closed', at: Date.now() });
 
 void serviceTesting.runRegistryAdapterConformance({ create: () => new services.ServiceRegistry({ sweepInterval: 0 }) });
 void serviceTesting.runConfigAdapterConformance({ create: () => new services.ConfigStore() });
+
+
+function cjsStandard<T>(): openmesh.StandardSchemaV1<unknown, T> {
+  return null as unknown as openmesh.StandardSchemaV1<unknown, T>;
+}
+
+const CjsNewUser = cjsStandard<{ name: string }>();
+const CjsUser = cjsStandard<{ id: string; name: string }>();
+
+openmesh()
+  .use(plugins.bodyParser())
+  .post('/typed/:id', {
+    body: CjsNewUser,
+    response: { 201: CjsUser }
+  }, async ({ body, params }) => {
+    const name: string = body.name;
+    const id: string = params.id;
+    return openmesh.created({ id, name });
+  });
+
+const cjsMeshed = openmesh({
+  mesh: {
+    control: {
+      url: 'http://127.0.0.1:4000/_mesh',
+      token: 'mesh-control-token-value'
+    }
+  }
+});
+
+const cjsPolicy: openmesh.MeshTrafficPolicy = {
+  routes: [
+    {
+      when: { headers: { 'x-beta-user': 'true' } },
+      target: { version: 'v2' }
+    }
+  ],
+  split: [
+    { match: { version: 'v1' }, weight: 90 },
+    { match: { version: 'v2' }, weight: 10 }
+  ],
+  prefer: [
+    { match: { region: 'nz' } },
+    { match: { region: 'au' } }
+  ]
+};
+void cjsPolicy;
+
+const cjsTrafficConfig: openmesh.MeshTrafficConfigOptions = {
+  namespace: 'mesh-payments',
+  key: 'traffic'
+};
+void cjsTrafficConfig;
+
+const cjsPayments = cjsMeshed.mesh('payments');
+void cjsPayments.post<{ id: string }>('/charges', { body: { amount: 10 } });
+
+
+const cjsWorkloadIdentity: openmesh.WorkloadIdentityOptions = {
+  trustDomain: 'openmesh.test',
+  ca: 'test-ca',
+  cert: 'test-cert',
+  key: 'test-key',
+  allow: ['payments']
+};
+void cjsWorkloadIdentity;
+
+const cjsPeerTls: mesh.PeerTlsOptions = {
+  ca: 'test-ca',
+  cert: 'test-cert',
+  key: 'test-key',
+  expectedIdentity: 'spiffe://openmesh.test/service/payments'
+};
+void cjsPeerTls;
+
+
+const cjsIdentified = openmesh({
+  service: 'gateway',
+  identity: cjsWorkloadIdentity
+});
+const cjsWorkloadId: string = cjsIdentified.workload.id;
+void cjsWorkloadId;
+void cjsIdentified.workload.rotate(
+  { ca: 'next-ca', cert: 'next-cert', key: 'next-key' },
+  { graceMs: 30_000 }
+);
+
+
+const cjsDbClient = {
+  user: {
+    async findMany() {
+      return [{ id: '1' }];
+    }
+  }
+};
+const cjsDatabase = db.database(cjsDbClient, {
+  name: 'primary',
+  ping: () => true
+});
+openmesh()
+  .register(cjsDatabase)
+  .get('/db-users', async () => cjsDatabase.client.user.findMany());
+const cjsDatabaseReady: boolean = cjsDatabase.ready;
+void cjsDatabaseReady;

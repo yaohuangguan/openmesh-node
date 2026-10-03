@@ -1,8 +1,8 @@
 # OpenMesh for Node.js
 
-**A service runtime for Node.js — not another web framework.**
+**Start as an API. Grow into a mesh.**
 
-Build services that can **discover, route, stream, backpressure, reconfigure, and observe each other** from application code, without turning the request path into a dependency-heavy platform.
+OpenMesh is a TypeScript-first Node.js runtime for building ordinary HTTP APIs that can grow into an **application-native service mesh**: discovery, routing, backpressure, retries, circuits, streaming, traffic policy, live configuration, and observability stay inside the runtime instead of requiring a sidecar on every service.
 
 [![npm](https://img.shields.io/npm/v/openmesh-node?label=npm)](https://www.npmjs.com/package/openmesh-node)
 [![CI](https://github.com/yaohuangguan/openmesh-node/actions/workflows/ci.yml/badge.svg)](https://github.com/yaohuangguan/openmesh-node/actions/workflows/ci.yml)
@@ -13,11 +13,96 @@ Build services that can **discover, route, stream, backpressure, reconfigure, an
 npm install openmesh-node
 ```
 
-**v0.4.0 is live on npm.** OpenMesh is TypeScript-first, ships ESM + CommonJS + declarations, and keeps the native HTTP core at **zero runtime dependencies**.
+**v0.4.0 is live on npm.** It ships ESM + CommonJS + declarations and keeps the native HTTP core at **zero runtime dependencies**.
 
-[Get started](#start-in-30-seconds) · [Why OpenMesh](#why-openmesh) · [Architecture](#architecture) · [Microservices](docs/services.md) · [Peer routing](docs/distributed.md) · [Observability](docs/observability.md) · [Performance](docs/performance.md) · [API](docs/api.md)
+**v0.5 is currently a preview branch.** The new developer surface is intentionally smaller: typed `app.get/post/...` for normal APIs, then `app.mesh('service')` when the application grows. See [Application-native Mesh](docs/mesh-runtime.md) and [Advanced HTTP Contracts](docs/functional-http.md).
+
+[Get started](#start-in-30-seconds) · [Why OpenMesh](#why-openmesh) · [Architecture](#architecture) · [Databases](docs/database.md) · [Microservices](docs/services.md) · [Peer routing](docs/distributed.md) · [Observability](docs/observability.md) · [Performance](docs/performance.md) · [API](docs/api.md)
 
 ---
+
+## 0.5 preview: from API to mesh
+
+Normal API development stays small:
+
+```ts
+import openmesh, { created } from 'openmesh-node';
+import { bodyParser } from 'openmesh-node/plugins';
+
+const app = openmesh();
+app.use(bodyParser());
+
+app.post('/users/:id', {
+  body: NewUser,
+  response: {
+    201: User,
+    409: Problem
+  }
+}, async ({ body, params }) => {
+  return created(await users.create({
+    id: params.id,
+    ...body
+  }));
+});
+```
+
+Bring the database library you already use. OpenMesh does not add a query language:
+
+```ts
+import { database } from 'openmesh-node/db';
+
+const db = database(prisma, {
+  connect: client => client.$connect(),
+  disconnect: client => client.$disconnect(),
+  transaction: (client, work) => client.$transaction(work)
+});
+
+app.register(db);
+
+app.get('/users', async () => db.client.user.findMany());
+```
+
+The same resource API works with connectionless clients such as Drizzle, explicit lifecycle clients such as TypeORM, and transaction builders such as Kysely. The original client type is preserved. See [Databases and ORMs](docs/database.md).
+
+When that application splits into services, the programming model grows instead of changing:
+
+```ts
+const app = openmesh({
+  service: 'gateway',
+
+  mesh: {
+    control: {
+      url: process.env.OPENMESH_CONTROL_URL,
+      token: process.env.OPENMESH_TOKEN
+    },
+
+    services: {
+      payments: {
+        traffic: {
+          split: [
+            { match: { version: 'v1' }, weight: 90 },
+            { match: { version: 'v2' }, weight: 10 }
+          ]
+        }
+      }
+    }
+  }
+});
+
+const payments = app.mesh('payments');
+
+const charge = await payments.post('/charges', {
+  key: user.id,
+  body: {
+    userId: user.id,
+    amount: order.total
+  }
+});
+```
+
+That call reuses OpenMesh's existing discovery watch, per-service bulkhead, deadlines, retry policy, circuit state, peer routing, tracing, and metrics. Traffic rules, weighted canaries, locality preference/failover, and live control-plane policy updates sit above the same warm service pool. There is no sidecar hop.
+
+The 0.5 preview also includes **SPIFFE-style workload identity and service-to-service mTLS**: the same application identity config protects inbound HTTPS and authenticates outbound `app.mesh()` calls. OpenMesh can hot-rotate already-issued workload certificates without restarting the process; certificate issuance and revocation distribution remain external, so it should not be described as a drop-in Istio/Linkerd replacement.
 
 ## Why OpenMesh
 
@@ -31,7 +116,9 @@ Most Node.js HTTP libraries stop at the server boundary. OpenMesh keeps going.
 | How do long-lived responses behave? | True streaming with explicit post-header no-replay semantics |
 | How does topology update without restarts? | Registration leases + push watches |
 | How do I change config safely at runtime? | Immutable snapshots + revision/epoch CAS |
+| How do I use my existing ORM or SQL client? | Typed database resources with lifecycle, health and optional transaction adapters |
 | How do I persist the control plane? | Durable Redis adapters |
+| How do services authenticate each other? | SPIFFE-style workload identity + mutual TLS + inbound allow-lists |
 | How do I limit control-plane access? | Scoped credentials + service/namespace boundaries |
 | How do I export telemetry? | Request/server/peer lifecycle events + OpenTelemetry-compatible metrics bridge |
 
@@ -312,9 +399,11 @@ Those integrations are optional. The native request path does not require them.
 
 | Import | Purpose |
 | --- | --- |
-| `openmesh-node` | HTTP runtime |
-| `openmesh-node/plugins` | Native plugins |
-| `openmesh-node/mesh` | Peer routing / client data plane |
+| `openmesh-node` | Typed HTTP runtime + `app.mesh()` facade |
+| `openmesh-node/plugins` | Native plugins and body parsers |
+| `openmesh-node/http` | Advanced functional contract API (0.5 preview) |
+| `openmesh-node/db` | ORM/database resource lifecycle, health and transaction adapters |
+| `openmesh-node/mesh` | Low-level peer routing / client data plane |
 | `openmesh-node/services` | Registration, discovery, config, control plane |
 | `openmesh-node/services/redis` | Durable Redis adapters |
 | `openmesh-node/services/testing` | Adapter conformance harness |
@@ -392,7 +481,7 @@ CI covers Node 22/24 on Linux and Windows, real Redis integration, packed-packag
 
 ## Documentation
 
-[API](docs/api.md) · [Services & control plane](docs/services.md) · [Peer routing](docs/distributed.md) · [0.4 architecture](docs/architecture-0.4.md) · [Observability](docs/observability.md) · [Plugins](docs/plugins.md) · [Performance](docs/performance.md) · [Releasing](docs/releasing.md) · [Changelog](CHANGELOG.md)
+[Application-native Mesh](docs/mesh-runtime.md) · [API](docs/api.md) · [Advanced HTTP Contracts](docs/functional-http.md) · [Services & control plane](docs/services.md) · [Peer routing](docs/distributed.md) · [0.4 architecture](docs/architecture-0.4.md) · [Observability](docs/observability.md) · [Plugins](docs/plugins.md) · [Performance](docs/performance.md) · [Releasing](docs/releasing.md) · [Changelog](CHANGELOG.md)
 
 ## Contributing
 

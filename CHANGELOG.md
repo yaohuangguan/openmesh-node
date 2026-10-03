@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.0 (unreleased)
+
+- Add the application-native mesh facade: configure `openmesh({ service, mesh })`, get lazy service handles with `app.mesh(name)`, and keep the existing `ControlClient` / `ServicePool` / `PeerPool` machinery underneath.
+- Add mesh HTTP helpers (`get/post/put/patch/delete`) that return parsed successful payloads, preserve raw/streaming escape hatches, propagate request-id/trace context automatically, and expose final remote failures as `MeshHttpError`.
+- Add metadata-based traffic targeting, ordered header-routing rules, weighted service subsets, and ordered locality preferences for beta/canary/version/region routing and regional failover. Request keys keep weighted subset selection sticky; explicit targets fail closed when no instance matches. Inbound headers may drive routing without being automatically forwarded downstream.
+- Add live control-plane traffic policies through `trafficConfig`: valid config revisions replace routing policy without restarting the service or rebuilding its pool, while invalid updates preserve the last-good policy and surface `trafficLastError`.
+- Add SPIFFE-style workload identity and service-to-service mTLS. `openmesh({ service, identity, mesh })` validates the local certificate URI SAN, serves HTTPS with mandatory client certificates, exposes authenticated caller identity in request state, and automatically authenticates outbound mesh calls against the destination service identity.
+- Add low-level PeerPool TLS profiles with exact URI SAN identity matching and fail-closed HTTPS enforcement when workload identity verification is enabled.
+- Add zero-restart workload certificate rotation through `app.workload.rotate(...)`: the owned HTTPS server swaps secure context for new connections while existing mesh pools rotate TLS agents with an optional drain grace period; invalid replacement identities fail closed.
+- Add per-request peer filtering to `PeerPool` so retries and circuits stay inside the selected traffic subset.
+- Add simple typed route shorthand directly on `app.get/post/...`: Standard Schema body/params/query/headers inference plus compile-time and runtime response status/body contracts without requiring a custom validator compiler.
+- Add complete HTTP lifecycle hooks: `onRequest`, `preParsing`, `preValidation`, `preHandler`, `postHandler`, `preSerialization`, `preSend`, `onResponse`, and `onError`, with plugin-scope and route-level composition.
+- Add `openmesh-node/db`: a zero-query-abstraction database resource for existing ORM/SQL clients. It preserves the original client type while adding application startup/shutdown lifecycle, readiness checks, named multi-database resources, and optional typed transaction adapters. CRUD + database lifecycle is covered end to end.
+- Split response preparation from socket writes so `preSerialization` sees the semantic body while `preSend` sees the final serialized string/bytes/stream.
+- Expand body parsing plugins with universal `bodyParser()` plus JSON, text, raw, URL-encoded form, and buffered multipart parsers with explicit size limits.
+- Keep `openmesh-node/http` as an optional advanced contract API: immutable route values, `pipe()`, typed derivation, and contract-first `implement()` for tooling-heavy use cases rather than the default CRUD learning path.
+- Add real multi-service mesh tests, typed CRUD tests, lifecycle-order tests, TypeScript negative tests, and packed-package coverage for the new public surfaces.
+
 ## 0.4.0 - 2026-10-03
 
 - Add request/server lifecycle observability tied to actual response finish/close events, including streaming responses.

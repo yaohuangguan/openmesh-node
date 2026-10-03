@@ -2,9 +2,9 @@
 
 ## One-line positioning
 
-**OpenMesh is a TypeScript-first Node.js service runtime for discovery, routing, streaming, backpressure, live configuration, and observability.**
+**OpenMesh is an application-native service mesh and typed HTTP runtime for Node.js: start as an API, grow into a mesh.**
 
-It is not positioned as another web framework. The HTTP server is the entry point; the differentiator is what happens between services once the application grows beyond one process.
+It is not positioned as another web framework or as a drop-in Istio/Linkerd replacement. Normal HTTP development is the entry point; the differentiator is that the same runtime grows into service discovery, traffic policy, pressure control, retries, circuits, streaming, and observability without adding a sidecar hop.
 
 Repository: https://github.com/yaohuangguan/openmesh-node
 
@@ -14,42 +14,45 @@ Current release: **0.4.0**
 
 ## Short introduction
 
-OpenMesh gives Node.js services an application-level runtime for service-to-service communication.
+OpenMesh lets a Node.js application begin as an ordinary typed HTTP API and grow into multiple cooperating services without switching to a separate service-communication programming model.
 
-The native request path has zero runtime dependencies. Optional modules add discovery-backed service pools, bounded queues, per-service bulkheads, adaptive concurrency, deadlines, retries, circuit breaking, true streaming, scoped control-plane credentials, durable Redis registry/config adapters, live configuration, and OpenTelemetry-compatible metrics.
+The 0.5 preview adds `app.mesh('service')` as a small developer facade over the existing discovery-backed `ServicePool` and `PeerPool` runtime. The native request path remains dependency-light, while mesh calls reuse bounded queues, per-service bulkheads, adaptive concurrency, deadlines, retries, circuit breaking, streaming, tracing, traffic subsets, and existing control-plane adapters.
 
-The package ships ESM, CommonJS, and generated TypeScript declarations.
+The package ships ESM, CommonJS, and generated TypeScript declarations. The 0.5 preview also includes SPIFFE-style workload identity and service-to-service mTLS with CA verification, URI SAN matching, inbound service allow-lists, and zero-restart certificate hot rotation. Certificate issuance and revocation distribution remain external responsibilities.
 
 ## What to lead with
 
 When presenting OpenMesh, lead with these ideas in order:
 
-1. **Service runtime, not another router.**
-   The interesting part begins after one HTTP service needs to reliably call another.
+1. **Start as an API. Grow into a mesh.**
+   A developer can begin with normal typed `app.get/post` routes and only learn `app.mesh('service')` when the application splits into services.
 
-2. **Failure semantics are explicit.**
-   Admission, queueing, deadlines, retries, circuits, stream commitment, and shutdown behavior are part of the API rather than hidden defaults.
+2. **Application-native mesh, no sidecar hop.**
+   Discovery, traffic targeting, peer selection, deadlines, retries, circuits, pressure, tracing, and streaming live in the Node.js runtime.
 
-3. **Small native core, optional integrations.**
-   Redis, OpenTelemetry, Express, and Fastify sit behind explicit boundaries instead of becoming core dependencies.
+3. **Failure semantics are explicit.**
+   Admission, queueing, deadlines, retries, circuits, stream commitment, and shutdown behavior are defined rather than hidden.
 
 4. **Real control-plane behavior.**
-   Registration leases, membership watches, live config CAS, least-privilege credentials, and Redis-backed persistence are working features, not roadmap bullets.
+   Registration leases, membership watches, live config CAS, least-privilege credentials, and Redis-backed persistence are working features.
 
-5. **Measured rather than marketed performance.**
+5. **Identity is real, PKI issuance is still external.**
+   OpenMesh 0.5 authenticates workloads with SPIFFE-style URI identities and mutual TLS and can hot-rotate newly issued cert/key material. It does not yet issue certificates or distribute revocation state, so do not market it as a transparent Istio/Linkerd replacement.
+
+6. **Measured rather than marketed performance.**
    Benchmarks are reproducible regression evidence, not “fastest framework” advertising.
 
 ## 15-second pitch
 
-> OpenMesh is a Node.js service runtime for applications that have outgrown “just call another URL.” It adds discovery-backed routing, overload protection, streaming semantics, live configuration, durable Redis control-plane adapters, and observability while keeping the native HTTP core dependency-free.
+> OpenMesh lets a Node.js app start as a normal typed API and grow into an application-native service mesh. When services split, `app.mesh('payments')` adds discovery-backed routing, traffic policy, overload protection, retries, circuits, tracing, and streaming without putting a sidecar proxy in the request path.
 
 ## 60-second pitch
 
-> Node has many good HTTP frameworks. OpenMesh focuses on the layer after that: how services find each other, route requests, fail over, handle overload, stream safely, change configuration, and expose telemetry.
+> OpenMesh starts where ordinary API frameworks usually stop. You can write a normal typed Node.js API, then use `app.mesh('payments')` when that application grows into multiple services.
 >
-> A managed ServicePool follows discovery and owns isolated queue, concurrency, circuit, and adaptive state. Streaming responses have explicit commit semantics so post-header failures are never silently replayed. The control plane supports registration leases, scoped credentials, live config CAS, and durable Redis adapters. The native request path stays dependency-light and the package ships as TypeScript-first ESM/CommonJS.
+> The service handle is backed by the existing OpenMesh runtime: discovery watches, metadata traffic subsets, P2C/rendezvous routing, per-service admission, adaptive concurrency, deadlines, retry rules, circuits, streaming semantics, trace propagation, and peer metrics. The control plane adds registration leases, scoped credentials, live config CAS, and durable Redis adapters.
 >
-> OpenMesh 0.4 is available on npm and CI validates Linux/Windows, Node 22/24, real Redis integration, packed-package imports, demos, and normalized performance regression.
+> The key implementation choice is application-native rather than sidecar-native: there is no extra proxy hop in the OpenMesh request path. The 0.5 preview authenticates service calls with SPIFFE-style workload identity and mutual TLS and can hot-rotate already-issued credentials; certificate issuance stays outside the runtime. OpenMesh 0.4 remains the current npm release; the smaller `app.mesh()` developer surface is the 0.5 preview.
 
 ## Demonstrations
 
@@ -98,16 +101,21 @@ Always share the environment, raw rounds, limitations, and same-run comparison m
 
 Recommended repository description:
 
-> Node.js service runtime for discovery, routing, backpressure, streaming, live config, Redis control plane, and observability.
+> Application-native service mesh and typed HTTP runtime for Node.js — start as an API, grow into a mesh.
 
 Recommended GitHub topics:
 
 ```text
 nodejs
 typescript
+service-mesh
+mtls
+spiffe
+workload-identity
 microservices
 distributed-systems
 service-discovery
+traffic-management
 backpressure
 streaming
 redis
@@ -118,12 +126,12 @@ service-runtime
 
 The README first screen should communicate, in this order:
 
-1. service runtime positioning;
-2. install command;
-3. release/CI status;
-4. why it is different;
-5. architecture;
-6. runnable code.
+1. “Start as an API. Grow into a mesh.”;
+2. one normal typed API example;
+3. one `app.mesh('payments')` example;
+4. no-sidecar architecture, workload identity, and the honest certificate-lifecycle boundary;
+5. release/CI status;
+6. deeper runtime architecture and evidence.
 
 Do not lead the repository with benchmark competitor names. Performance belongs in the evidence section.
 
@@ -185,5 +193,9 @@ The release includes:
 - adapter conformance tooling;
 - benchmark regression CI;
 - Linux/Windows package verification.
+
+The **0.5 preview branch** adds the smaller developer path described above: simple Standard Schema typed CRUD routes, `openmesh-node/db` for ORM/database lifecycle without replacing the ORM API, `app.mesh('service')`, automatic request-context propagation, metadata traffic targeting/weighted subsets, locality failover, live traffic policy, complete HTTP lifecycle hooks, expanded body-parser plugins, and SPIFFE-style workload identity with service-to-service mTLS.
+
+The identity layer verifies CA chains and exact workload URI SANs, supports inbound service allow-lists, and can hot-rotate supplied cert/key material without process restart. Certificate issuance, renewal scheduling, and revocation distribution are **not** automated by OpenMesh yet. Keep that boundary visible in launch material rather than implying transparent Istio/Linkerd parity.
 
 The project remains pre-1.0. Compatibility may evolve between minor releases.

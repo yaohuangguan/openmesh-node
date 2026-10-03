@@ -10,6 +10,8 @@ export interface ContextRoute {
   serializer?: ((body: unknown, status?: number) => string | Buffer | Uint8Array) | null;
 }
 
+export interface ContextState extends Record<string, unknown> {}
+
 export class HttpError extends Error {
   statusCode: number;
   expose: boolean;
@@ -38,7 +40,7 @@ export class Context {
   private _values: string[] | null;
   private _params: Record<string, string> | null = null;
   private _query: Record<string, string | string[]> | null = null;
-  private _state: Record<string, unknown> | null = null;
+  private _state: ContextState | null = null;
   private _body: unknown = undefined;
 
   constructor(
@@ -70,7 +72,7 @@ export class Context {
   get body(): unknown { return this._body; }
   set body(value: unknown) { this._body = value; }
   get requestBody(): unknown { return this.req.body; }
-  get state(): Record<string, unknown> { return this._state || (this._state = Object.create(null) as Record<string, unknown>); }
+  get state(): ContextState { return this._state || (this._state = Object.create(null) as ContextState); }
 
   get params(): Record<string, string> {
     if (this._params) return this._params;
@@ -121,21 +123,39 @@ export class Context {
   throw(status: number, message?: string): never { throw new HttpError(status, message); }
 }
 
-export function respond(ctx: Context, returned: unknown): void {
+export interface PreparedResponse {
+  readonly kind: 'none' | 'stream' | 'data';
+  readonly body: unknown;
+}
+
+export function prepareResponse(ctx: Context, returned: unknown): PreparedResponse {
   const res = ctx.res;
-  if (res.writableEnded || res.destroyed || res.headersSent) return;
+  if (res.writableEnded || res.destroyed || res.headersSent) {
+    return { kind: 'none', body: undefined };
+  }
+
   let body = ctx.body !== undefined ? ctx.body : returned === ctx ? undefined : returned;
 
   if (res.statusCode === 204 || res.statusCode === 304) {
-    res.removeHeader('content-type'); res.removeHeader('content-length'); res.removeHeader('transfer-encoding'); res.end(); return;
+    res.removeHeader('content-type');
+    res.removeHeader('content-length');
+    res.removeHeader('transfer-encoding');
+    return { kind: 'none', body: undefined };
   }
-  if (body === undefined) { if (res.statusCode === 200) res.statusCode = 204; res.end(); return; }
 
-  if (body !== null && typeof body === 'object' && 'pipe' in body && typeof (body as NodeJS.ReadableStream).pipe === 'function') {
+  if (body === undefined) {
+    if (res.statusCode === 200) res.statusCode = 204;
+    return { kind: 'none', body: undefined };
+  }
+
+  if (
+    body !== null &&
+    typeof body === 'object' &&
+    'pipe' in body &&
+    typeof (body as NodeJS.ReadableStream).pipe === 'function'
+  ) {
     if (!res.hasHeader('content-type')) res.setHeader('content-type', 'application/octet-stream');
-    const stream = body as NodeJS.ReadableStream & { destroy?: () => void };
-    if (ctx.method === 'HEAD') { stream.destroy?.(); res.end(); return; }
-    pipeline(stream, res, () => {}); return;
+    return { kind: 'stream', body };
   }
 
   if (Buffer.isBuffer(body) || body instanceof Uint8Array) {
@@ -150,6 +170,37 @@ export function respond(ctx: Context, returned: unknown): void {
   if (typeof body !== 'string' && !Buffer.isBuffer(body) && !(body instanceof Uint8Array)) {
     throw new TypeError('Serializer must return a string or bytes');
   }
-  if (!res.hasHeader('content-length')) res.setHeader('content-length', typeof body === 'string' ? Buffer.byteLength(body) : body.byteLength);
-  res.end(ctx.method === 'HEAD' ? undefined : body);
+
+  if (!res.hasHeader('content-length')) {
+    res.setHeader('content-length', typeof body === 'string' ? Buffer.byteLength(body) : body.byteLength);
+  }
+
+  return { kind: 'data', body };
+}
+
+export function sendPrepared(ctx: Context, prepared: PreparedResponse): void {
+  const res = ctx.res;
+  if (res.writableEnded || res.destroyed) return;
+
+  if (prepared.kind === 'none') {
+    res.end();
+    return;
+  }
+
+  if (prepared.kind === 'stream') {
+    const stream = prepared.body as NodeJS.ReadableStream & { destroy?: () => void };
+    if (ctx.method === 'HEAD') {
+      stream.destroy?.();
+      res.end();
+      return;
+    }
+    pipeline(stream, res, () => {});
+    return;
+  }
+
+  res.end(ctx.method === 'HEAD' ? undefined : prepared.body as string | Uint8Array);
+}
+
+export function respond(ctx: Context, returned: unknown): void {
+  sendPrepared(ctx, prepareResponse(ctx, returned));
 }
