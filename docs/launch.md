@@ -10,15 +10,19 @@ Repository: https://github.com/yaohuangguan/openmesh-node
 
 npm: https://www.npmjs.com/package/openmesh-node
 
+Website: https://openmesh-node.vercel.app/
+
+Docs: https://openmesh-node.vercel.app/docs/
+
 Current release: **0.5.0**
 
 ## Short introduction
 
 OpenMesh lets a Node.js application begin as an ordinary typed HTTP API and grow into multiple cooperating services without switching to a separate service-communication programming model.
 
-The 0.5 preview adds `app.mesh('service')` as a small developer facade over the existing discovery-backed `ServicePool` and `PeerPool` runtime. The native request path remains dependency-light, while mesh calls reuse bounded queues, per-service bulkheads, adaptive concurrency, deadlines, retries, circuit breaking, streaming, tracing, traffic subsets, and existing control-plane adapters.
+OpenMesh 0.5 adds `app.mesh('service')` as a small developer facade over the existing discovery-backed `ServicePool` and `PeerPool` runtime. The native request path remains dependency-light, while mesh calls reuse bounded queues, per-service bulkheads, adaptive concurrency, deadlines, retries, circuit breaking, streaming, tracing, traffic subsets, and existing control-plane adapters.
 
-The package ships ESM, CommonJS, and generated TypeScript declarations. The 0.5 preview also includes SPIFFE-style workload identity and service-to-service mTLS with CA verification, URI SAN matching, inbound service allow-lists, and zero-restart certificate hot rotation. Certificate issuance and revocation distribution remain external responsibilities.
+The package ships ESM, CommonJS, and generated TypeScript declarations. OpenMesh 0.5 also includes SPIFFE-style workload identity and service-to-service mTLS with CA verification, URI SAN matching, inbound service allow-lists, and zero-restart certificate hot rotation. Certificate issuance and revocation distribution remain external responsibilities.
 
 ## What to lead with
 
@@ -194,7 +198,7 @@ The release includes:
 - benchmark regression CI;
 - Linux/Windows package verification.
 
-The **0.5 preview branch** adds the smaller developer path described above: simple Standard Schema typed CRUD routes, `openmesh-node/db` for ORM/database lifecycle without replacing the ORM API, `app.mesh('service')`, automatic request-context propagation, metadata traffic targeting/weighted subsets, locality failover, live traffic policy, complete HTTP lifecycle hooks, expanded body-parser plugins, and SPIFFE-style workload identity with service-to-service mTLS.
+The **0.5.0 release** includes the smaller developer path described above: simple Standard Schema typed CRUD routes, `openmesh-node/db` for ORM/database lifecycle without replacing the ORM API, `app.mesh('service')`, automatic request-context propagation, metadata traffic targeting/weighted subsets, locality failover, live traffic policy, complete HTTP lifecycle hooks, expanded body-parser plugins, and SPIFFE-style workload identity with service-to-service mTLS.
 
 The identity layer verifies CA chains and exact workload URI SANs, supports inbound service allow-lists, and can hot-rotate supplied cert/key material without process restart. Certificate issuance, renewal scheduling, and revocation distribution are **not** automated by OpenMesh yet. Keep that boundary visible in launch material rather than implying transparent Istio/Linkerd parity.
 

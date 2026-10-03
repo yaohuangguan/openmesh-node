@@ -1,6 +1,8 @@
-# Application-native Mesh — 0.5 preview
+# Application-native Mesh — 0.5
 
 > **Start as an API. Grow into a mesh.**
+
+For the full system-level view, see [OpenMesh 0.5 architecture](architecture-0.5.md).
 
 OpenMesh 0.5 moves the mesh into the Node.js application runtime.
 
@@ -618,7 +620,7 @@ They remain useful for:
 
 ## Current boundaries
 
-The 0.5 preview covers application-level service communication:
+OpenMesh 0.5 covers application-level service communication:
 
 - service registration and discovery;
 - live membership watches;

@@ -15,13 +15,13 @@ npm install openmesh-node
 
 **v0.5.0 is the current npm release.** It ships ESM + CommonJS + declarations and keeps the native HTTP core at **zero runtime dependencies**.
 
-**v0.5 is currently a preview branch.** The new developer surface is intentionally smaller: typed `app.get/post/...` for normal APIs, then `app.mesh('service')` when the application grows. See [Application-native Mesh](docs/mesh-runtime.md) and [Advanced HTTP Contracts](docs/functional-http.md).
+**v0.5.0 is released.** The current developer surface is intentionally small: typed `app.get/post/...` for normal APIs, then `app.mesh('service')` when the application grows. See [Application-native Mesh](docs/mesh-runtime.md) and [Advanced HTTP Contracts](docs/functional-http.md).
 
-[Get started](#start-in-30-seconds) · [Why OpenMesh](#why-openmesh) · [Architecture](#architecture) · [Databases](docs/database.md) · [Microservices](docs/services.md) · [Peer routing](docs/distributed.md) · [Observability](docs/observability.md) · [Performance](docs/performance.md) · [API](docs/api.md)
+[Website](https://openmesh-node.vercel.app/) · [Docs](https://openmesh-node.vercel.app/docs/) · [Get started](#start-in-30-seconds) · [0.5 architecture](docs/architecture-0.5.md) · [Application-native mesh](docs/mesh-runtime.md) · [Databases](docs/database.md) · [Control plane](docs/services.md) · [Observability](docs/observability.md) · [API](docs/api.md)
 
 ---
 
-## 0.5 preview: from API to mesh
+## 0.5: from API to mesh
 
 Normal API development stays small:
 
@@ -102,7 +102,7 @@ const charge = await payments.post('/charges', {
 
 That call reuses OpenMesh's existing discovery watch, per-service bulkhead, deadlines, retry policy, circuit state, peer routing, tracing, and metrics. Traffic rules, weighted canaries, locality preference/failover, and live control-plane policy updates sit above the same warm service pool. There is no sidecar hop.
 
-The 0.5 preview also includes **SPIFFE-style workload identity and service-to-service mTLS**: the same application identity config protects inbound HTTPS and authenticates outbound `app.mesh()` calls. OpenMesh can hot-rotate already-issued workload certificates without restarting the process; certificate issuance and revocation distribution remain external, so it should not be described as a drop-in Istio/Linkerd replacement.
+OpenMesh 0.5 also includes **SPIFFE-style workload identity and service-to-service mTLS**: the same application identity config protects inbound HTTPS and authenticates outbound `app.mesh()` calls. OpenMesh can hot-rotate already-issued workload certificates without restarting the process; certificate issuance and revocation distribution remain external, so it should not be described as a drop-in Istio/Linkerd replacement.
 
 ## Why OpenMesh
 
@@ -401,7 +401,7 @@ Those integrations are optional. The native request path does not require them.
 | --- | --- |
 | `openmesh-node` | Typed HTTP runtime + `app.mesh()` facade |
 | `openmesh-node/plugins` | Native plugins and body parsers |
-| `openmesh-node/http` | Advanced functional contract API (0.5 preview) |
+| `openmesh-node/http` | Advanced functional contract API |
 | `openmesh-node/db` | ORM/database resource lifecycle, health and transaction adapters |
 | `openmesh-node/mesh` | Low-level peer routing / client data plane |
 | `openmesh-node/services` | Registration, discovery, config, control plane |
@@ -481,7 +481,7 @@ CI covers Node 22/24 on Linux and Windows, real Redis integration, packed-packag
 
 ## Documentation
 
-[Application-native Mesh](docs/mesh-runtime.md) · [API](docs/api.md) · [Advanced HTTP Contracts](docs/functional-http.md) · [Services & control plane](docs/services.md) · [Peer routing](docs/distributed.md) · [0.4 architecture](docs/architecture-0.4.md) · [Observability](docs/observability.md) · [Plugins](docs/plugins.md) · [Performance](docs/performance.md) · [Releasing](docs/releasing.md) · [Changelog](CHANGELOG.md)
+[Website Docs](https://openmesh-node.vercel.app/docs/) · [0.5 Architecture](docs/architecture-0.5.md) · [Application-native Mesh](docs/mesh-runtime.md) · [API](docs/api.md) · [Advanced HTTP Contracts](docs/functional-http.md) · [Databases & ORMs](docs/database.md) · [Services & control plane](docs/services.md) · [Peer routing](docs/distributed.md) · [Observability](docs/observability.md) · [Plugins](docs/plugins.md) · [Performance](docs/performance.md) · [Releasing](docs/releasing.md) · [Changelog](CHANGELOG.md)
 
 ## Contributing
 

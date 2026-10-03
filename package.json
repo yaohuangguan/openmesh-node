@@ -6,7 +6,7 @@
     "type": "git",
     "url": "git+https://github.com/yaohuangguan/openmesh-node.git"
   },
-  "homepage": "https://github.com/yaohuangguan/openmesh-node#readme",
+  "homepage": "https://openmesh-node.vercel.app/",
   "bugs": {
     "url": "https://github.com/yaohuangguan/openmesh-node/issues"
   },

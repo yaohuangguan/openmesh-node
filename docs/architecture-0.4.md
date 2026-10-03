@@ -1,5 +1,7 @@
 # OpenMesh 0.4 architecture
 
+> **Historical architecture snapshot.** This document describes the 0.4 design at the time it shipped. For the current runtime model, start with [OpenMesh 0.5 architecture](architecture-0.5.md) and [Application-native Mesh](mesh-runtime.md).
+
 OpenMesh 0.4 evolves the 0.3 service runtime into a production-tunable data plane without adding framework dependencies to the hot path.
 
 ## Runtime goals

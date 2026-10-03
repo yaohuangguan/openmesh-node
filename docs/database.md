@@ -1,5 +1,7 @@
 # Databases and ORMs
 
+OpenMesh 0.5 treats databases as application resources with lifecycle, readiness and optional transaction adapters. See [OpenMesh 0.5 architecture](architecture-0.5.md) for the wider runtime model.
+
 OpenMesh does not ship an ORM and does not wrap database query APIs.
 
 The database integration is deliberately small:

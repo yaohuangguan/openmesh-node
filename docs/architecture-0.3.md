@@ -1,5 +1,7 @@
 # OpenMesh 0.3 architecture
 
+> **Historical architecture snapshot.** This document describes the 0.3 design at the time it shipped. For the current runtime model, start with [OpenMesh 0.5 architecture](architecture-0.5.md) and [Application-native Mesh](mesh-runtime.md).
+
 OpenMesh 0.3 separates the Node request runtime from control-plane state and change delivery. The goal is to keep the native Node request path small while making registration, discovery and configuration replaceable and event-driven.
 
 ## Runtime boundaries

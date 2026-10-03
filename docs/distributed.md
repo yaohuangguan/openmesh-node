@@ -1,5 +1,7 @@
 # Distributed services and HTTP peers
 
+For the current high-level service model, start with [OpenMesh 0.5 architecture](architecture-0.5.md) and [Application-native Mesh](mesh-runtime.md). This document focuses on the lower-level peer data plane.
+
 `openmesh-node/mesh` is an independent peer client for known HTTP/HTTPS nodes and service gateways. The HTTP server does not load it unless requested.
 
 ## Selection and failure behavior
@@ -130,4 +132,4 @@ const pool = new PeerPool({
 
 The pool enforces selection, retries, circuits and caller-visible deadlines around the adapter. The adapter must respect cancellation to release its resources and enforce `maxResponseBytes`. The bundled [control-plane module](services.md) provides registration and discovery. External registries, DNS-SRV, libp2p and message transports can be implemented behind these interfaces. Peer URLs currently require HTTP(S) identifiers even when using a custom transport.
 
-P2P here means communication between known addressable HTTP nodes. Registry-backed discovery is available in 0.2. The peer transport itself provides no NAT traversal, DHT, gossip, consensus, durable queues, application authentication, or full OpenTelemetry exporter.
+P2P here means communication between known addressable HTTP nodes. Registry-backed discovery is built into the service runtime. OpenMesh 0.5 adds optional TLS identity profiles at the peer layer and SPIFFE-style workload mTLS through the application mesh facade. The transport still provides no NAT traversal, DHT, gossip, consensus, durable queues, certificate issuance/revocation infrastructure, or full tracing backend.

@@ -103,7 +103,7 @@ const response = await pool.request('/users/42', { key: '42' });
 
 Discovery feeds the existing routing/retry/circuit logic. `discover()` follows up to 100 pages (10,000 instances) within one client timeout budget; each response is bounded to 2 MiB. Page reads are not an atomic membership snapshot.
 
-For service-to-service callers, 0.4 adds a managed per-service pool that combines discovery watching with an isolated `PeerPool`:
+For new 0.5 applications, prefer the higher-level `app.mesh(name)` facade described in [Application-native Mesh](mesh-runtime.md). The lower-level managed `ServicePool` remains public for callers that want to own control-client lifecycle or routing primitives directly:
 
 ```js
 const users = await client.service('users', {
@@ -228,8 +228,8 @@ For a durable implementation, pass `reopen` as a factory that creates a new adap
 
 The bundled registry and configuration store are **in-memory, single-process** components. Registrations/configuration are lost on restart. They do not provide replication, leader election, durable transactions, audit history, secret encryption, or multi-writer distributed consensus. The control plane supports scoped Bearer credentials for action/resource authorization, but credential issuance, rotation, revocation distribution, and external identity integration remain deployment responsibilities.
 
-0.3 exposes `RegistryAdapter` and `ConfigAdapter` contracts. Custom implementations may be synchronous or asynchronous. Ordinary control-plane APIs require registration/list or snapshot/replace methods; SSE watch endpoints additionally require `subscribe()` returning an unsubscribe function. This allows Redis, etcd, Consul, SQL, or a standalone Go control plane to preserve the public protocol without coupling storage to the Node request runtime.
+The current service runtime exposes `RegistryAdapter` and `ConfigAdapter` contracts. Custom implementations may be synchronous or asynchronous. Ordinary control-plane APIs require registration/list or snapshot/replace methods; SSE watch endpoints additionally require `subscribe()` returning an unsubscribe function. This allows Redis, etcd, Consul, SQL, or a standalone Go control plane to preserve the public protocol without coupling storage to the Node request runtime.
 
-Do not run independent in-memory replicas behind a load balancer and assume they share state. External adapters must define their own consistency and watch semantics. Nothing here replaces your deployment platform's health checks or traffic policy. See [0.3 architecture](architecture-0.3.md).
+Do not run independent in-memory replicas behind a load balancer and assume they share state. External adapters must define their own consistency and watch semantics. OpenMesh 0.5 can apply application-level traffic policy through managed mesh services, but it does not replace scheduler/network health infrastructure. See [0.5 architecture](architecture-0.5.md) for the current boundary and [0.3 architecture](architecture-0.3.md) for historical protocol context.
 
 Run `npm run demo:services` for a complete local flow, including live configuration and removing a stopped service from discovery.
