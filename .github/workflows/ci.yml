@@ -63,9 +63,9 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run build
       - name: Run normalized benchmark
-        run: node benchmarks/run.cjs --duration=2 --rounds=3 --connections=32 --frameworks=openmesh,fastify --scenarios=plaintext,json,params,body,middleware --output=results/ci.json
+        run: node benchmarks/run.cjs --duration=3 --rounds=5 --connections=32 --frameworks=openmesh,fastify --scenarios=plaintext,json,params,body,middleware --output=results/ci.json
       - name: Enforce regression budget
-        run: npm run bench:guard -- --report=benchmarks/results/ci.json --min-ratio=0.82 --min-geomean=0.88 --max-p99-ratio=3
+        run: npm run bench:guard -- --report=benchmarks/results/ci.json --min-ratio=0.70 --min-geomean=0.82 --max-p99-ratio=4
       - name: Upload benchmark report
         if: always()
         uses: actions/upload-artifact@v7

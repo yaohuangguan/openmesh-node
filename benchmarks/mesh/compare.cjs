@@ -47,6 +47,21 @@ function mib(value) {
   return value == null ? 'n/a' : (value / 1024 / 1024).toFixed(1) + ' MiB';
 }
 
+function mtlsRetention(report) {
+  if (report.normalized?.mtlsRpsRetention != null) return percent(report.normalized.mtlsRpsRetention);
+  if (report.system?.capabilities?.mtlsIncludedInMesh) return 'included';
+  return 'n/a';
+}
+
+function failoverMs(report) {
+  return report.failover?.recoveryMs == null ? 'n/a' : Math.round(report.failover.recoveryMs) + ' ms';
+}
+
+function failoverErrors(report) {
+  if (!report.failover) return 'n/a';
+  return report.failover.errors + '/' + report.failover.attempts;
+}
+
 function summary(report, scenario) {
   return report.summary.find(row => row.scenario === scenario) || null;
 }
@@ -61,8 +76,8 @@ const lines = [
     reports[0].config.duration + 's measured, ' +
     reports[0].config.connections + ' connections, 1s warmup per path.',
   '',
-  '| Runtime | Data plane | Mesh RPS retention | Mesh p99 tax | Policy RPS retention | Policy p99 tax | Warm RSS |',
-  '| --- | --- | ---: | ---: | ---: | ---: | ---: |'
+  '| Runtime | Data plane | Mesh RPS retention | Mesh p99 tax | Policy RPS retention | mTLS RPS retention | mTLS p99 tax | Failover recovery | Failover errors | Warm RSS |',
+  '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |'
 ];
 
 for (const report of reports) {
@@ -72,7 +87,10 @@ for (const report of reports) {
     ' | ' + percent(report.normalized.meshRpsRetention) +
     ' | ' + ms(report.normalized.meshP99TaxMs) +
     ' | ' + percent(report.normalized.policyRpsRetention) +
-    ' | ' + ms(report.normalized.policyP99TaxMs) +
+    ' | ' + mtlsRetention(report) +
+    ' | ' + ms(report.normalized.mtlsP99TaxMs) +
+    ' | ' + failoverMs(report) +
+    ' | ' + failoverErrors(report) +
     ' | ' + mib(report.warmRssBytes) + ' |'
   );
 }
@@ -80,27 +98,30 @@ for (const report of reports) {
 lines.push('');
 lines.push('Absolute values are preserved for diagnosis, not used as the cross-language ranking metric:');
 lines.push('');
-lines.push('| Runtime | Direct req/s | Mesh req/s | Policy req/s | Direct p99 | Mesh p99 | Policy p99 |');
-lines.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: |');
+lines.push('| Runtime | Direct req/s | Mesh req/s | Policy req/s | mTLS req/s | Direct p99 | Mesh p99 | Policy p99 | mTLS p99 |');
+lines.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
 
 for (const report of reports) {
   const direct = summary(report, 'direct');
   const mesh = summary(report, 'mesh');
   const policy = summary(report, 'policy');
+  const mtls = summary(report, 'mtls');
 
   lines.push(
     '| ' + report.system.name + ' ' + report.system.version +
     ' | ' + (direct ? Math.round(direct.medianRps) : 'n/a') +
     ' | ' + (mesh ? Math.round(mesh.medianRps) : 'n/a') +
     ' | ' + (policy ? Math.round(policy.medianRps) : 'n/a') +
+    ' | ' + (mtls ? Math.round(mtls.medianRps) : 'n/a') +
     ' | ' + (direct ? direct.medianP99Ms + ' ms' : 'n/a') +
     ' | ' + (mesh ? mesh.medianP99Ms + ' ms' : 'n/a') +
-    ' | ' + (policy ? policy.medianP99Ms + ' ms' : 'n/a') + ' |'
+    ' | ' + (policy ? policy.medianP99Ms + ' ms' : 'n/a') +
+    ' | ' + (mtls ? mtls.medianP99Ms + ' ms' : 'n/a') + ' |'
   );
 }
 
 lines.push('');
-lines.push('Interpretation rule: compare normalized mesh/policy cost first. Raw req/s reflects language, protocol and adapter implementation as well as mesh cost.');
+lines.push('Interpretation rule: compare normalized mesh/policy/mTLS cost and failure behavior first. Raw req/s reflects language, protocol and adapter implementation as well as mesh cost.');
 lines.push('');
 lines.push('This short CI run is regression/development evidence, not a release performance claim.');
 

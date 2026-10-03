@@ -49,7 +49,7 @@ function startAdapter(name) {
     const timer = setTimeout(() => {
       child.kill();
       reject(new Error('Adapter startup timed out: ' + stderr));
-    }, 20000);
+    }, 60000);
 
     child.once('message', info => {
       clearTimeout(timer);
@@ -75,18 +75,67 @@ function startAdapter(name) {
   });
 }
 
-async function readStats(child) {
-  return new Promise(resolve => {
-    const timer = setTimeout(() => resolve(null), 2000);
+async function requestAdapter(child, request, expectedType, timeout = 10000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.off('message', listener);
+      reject(new Error('Adapter message timed out: ' + expectedType));
+    }, timeout);
     const listener = message => {
-      if (message?.type !== 'stats') return;
+      if (message?.type !== expectedType) return;
       clearTimeout(timer);
       child.off('message', listener);
       resolve(message);
     };
     child.on('message', listener);
-    child.send('stats');
+    child.send(request);
   });
+}
+
+async function readStats(child) {
+  try {
+    return await requestAdapter(child, 'stats', 'stats', 2000);
+  } catch {
+    return null;
+  }
+}
+
+async function measureFailover(adapter) {
+  if (!adapter.info.capabilities?.failover || !adapter.info.endpoints.mesh) return null;
+
+  const started = performance.now();
+  const trigger = await requestAdapter(adapter.child, { type: 'failover' }, 'failover', 15000);
+  let attempts = 0;
+  let errors = 0;
+  let consecutiveSuccesses = 0;
+  let firstSuccessMs = null;
+  const deadline = performance.now() + 10000;
+
+  while (performance.now() < deadline && consecutiveSuccesses < 20) {
+    attempts += 1;
+    try {
+      const response = await fetch(adapter.info.endpoints.mesh, {
+        headers: { connection: 'close' }
+      });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      await response.arrayBuffer();
+      if (firstSuccessMs === null) firstSuccessMs = performance.now() - started;
+      consecutiveSuccesses += 1;
+    } catch {
+      errors += 1;
+      consecutiveSuccesses = 0;
+    }
+  }
+
+  return {
+    target: trigger.target || null,
+    recoveryMs: consecutiveSuccesses >= 20 ? performance.now() - started : null,
+    firstSuccessMs,
+    attempts,
+    errors,
+    errorRate: attempts ? errors / attempts : null,
+    stableSuccessWindow: 20
+  };
 }
 
 (async () => {
@@ -120,7 +169,7 @@ async function readStats(child) {
   };
 
   try {
-    const scenarios = ['direct', 'mesh', 'policy'];
+    const scenarios = ['direct', 'mesh', 'policy', 'mtls'];
 
     for (let round = 0; round < rounds; round += 1) {
       const ordered = [
@@ -170,7 +219,7 @@ async function readStats(child) {
       }
     }
 
-    for (const scenario of ['direct', 'mesh', 'policy']) {
+    for (const scenario of ['direct', 'mesh', 'policy', 'mtls']) {
       const rows = report.results.filter(row => row.scenario === scenario);
       if (!rows.length) continue;
       report.summary.push({
@@ -184,16 +233,20 @@ async function readStats(child) {
     const direct = report.summary.find(row => row.scenario === 'direct');
     const mesh = report.summary.find(row => row.scenario === 'mesh');
     const policy = report.summary.find(row => row.scenario === 'policy');
+    const mtls = report.summary.find(row => row.scenario === 'mtls');
 
     report.normalized = {
       meshRpsRetention: direct && mesh ? mesh.medianRps / direct.medianRps : null,
       meshP99TaxMs: direct && mesh ? mesh.medianP99Ms - direct.medianP99Ms : null,
       policyRpsRetention: mesh && policy ? policy.medianRps / mesh.medianRps : null,
-      policyP99TaxMs: mesh && policy ? policy.medianP99Ms - mesh.medianP99Ms : null
+      policyP99TaxMs: mesh && policy ? policy.medianP99Ms - mesh.medianP99Ms : null,
+      mtlsRpsRetention: mesh && mtls ? mtls.medianRps / mesh.medianRps : null,
+      mtlsP99TaxMs: mesh && mtls ? mtls.medianP99Ms - mesh.medianP99Ms : null
     };
 
     const stats = await readStats(adapter.child);
     report.warmRssBytes = stats?.rssBytes ?? null;
+    report.failover = await measureFailover(adapter);
 
     await fs.mkdir(path.dirname(output), { recursive: true });
     await fs.writeFile(output, JSON.stringify(report, null, 2) + '\n');
@@ -205,6 +258,12 @@ async function readStats(child) {
     console.log('Policy RPS retention:', report.normalized.policyRpsRetention === null
       ? 'n/a'
       : (report.normalized.policyRpsRetention * 100).toFixed(1) + '%');
+    console.log('mTLS RPS retention:', report.normalized.mtlsRpsRetention === null
+      ? (adapter.info.capabilities?.mtlsIncludedInMesh ? 'included in mesh path' : 'n/a')
+      : (report.normalized.mtlsRpsRetention * 100).toFixed(1) + '%');
+    console.log('Failover recovery:', report.failover?.recoveryMs == null
+      ? 'n/a'
+      : report.failover.recoveryMs.toFixed(1) + ' ms');
     console.log('Saved:', output);
   } finally {
     await adapter.close();

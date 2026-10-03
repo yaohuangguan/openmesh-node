@@ -59,6 +59,9 @@ jobs:
           echo "ZooKeeper did not become ready" >&2
           exit 1
 
+      - name: Pull Envoy 1.39 stable image
+        run: docker pull envoyproxy/envoy:v1.39-latest
+
       - name: Run OpenMesh mesh benchmark
         run: >-
           node benchmarks/mesh/run.cjs
@@ -67,6 +70,18 @@ jobs:
           --connections=32
           --adapter=openmesh
           --output=results/openmesh-ci.json
+
+      - name: Run Envoy C++ sidecar benchmark
+        env:
+          ENVOY_IMAGE: envoyproxy/envoy:v1.39-latest
+          ENVOY_VERSION: "1.39"
+        run: >-
+          node benchmarks/mesh/run.cjs
+          --duration=2
+          --rounds=3
+          --connections=32
+          --adapter=envoy
+          --output=results/envoy-ci.json
 
       - name: Run Apache Dubbo proxyless benchmark
         env:
@@ -93,12 +108,49 @@ jobs:
           --adapter=dapr
           --output=results/dapr-ci.json
 
+      - name: Create Kubernetes 1.35 + Linkerd 2.20 benchmark topology
+        run: |
+          chmod +x benchmarks/mesh/linkerd/setup.sh
+          benchmarks/mesh/linkerd/setup.sh
+
+      - name: Start Linkerd direct and meshed gateway forwards
+        run: |
+          kubectl port-forward -n bench-direct svc/gateway 18080:8080 >/tmp/linkerd-direct-portforward.log 2>&1 &
+          echo $! > /tmp/linkerd-direct-portforward.pid
+          kubectl port-forward -n bench-linkerd svc/gateway 18081:8080 >/tmp/linkerd-mesh-portforward.log 2>&1 &
+          echo $! > /tmp/linkerd-mesh-portforward.pid
+          for port in 18080 18081; do
+            for i in {1..60}; do
+              if curl -fsS "http://127.0.0.1:$port/work" >/dev/null; then
+                break
+              fi
+              sleep 1
+            done
+            curl -fsS "http://127.0.0.1:$port/work" >/dev/null
+          done
+
+      - name: Run Linkerd 2.20 Rust sidecar benchmark
+        env:
+          LINKERD_VERSION: "2.20"
+          LINKERD_DIRECT_URL: http://127.0.0.1:18080/work
+          LINKERD_MESH_URL: http://127.0.0.1:18081/work
+          LINKERD_NAMESPACE: bench-linkerd
+        run: >-
+          node benchmarks/mesh/run.cjs
+          --duration=2
+          --rounds=3
+          --connections=32
+          --adapter=linkerd
+          --output=results/linkerd-ci.json
+
       - name: Render same-runner comparison
         run: >-
           node benchmarks/mesh/compare.cjs
           benchmarks/mesh/results/openmesh-ci.json
           benchmarks/mesh/results/dubbo-ci.json
           benchmarks/mesh/results/dapr-ci.json
+          benchmarks/mesh/results/envoy-ci.json
+          benchmarks/mesh/results/linkerd-ci.json
           --output=benchmarks/mesh/results/comparison.md
 
       - uses: actions/upload-artifact@v7
@@ -109,4 +161,6 @@ jobs:
             benchmarks/mesh/results/openmesh-ci.json
             benchmarks/mesh/results/dubbo-ci.json
             benchmarks/mesh/results/dapr-ci.json
+            benchmarks/mesh/results/envoy-ci.json
+            benchmarks/mesh/results/linkerd-ci.json
             benchmarks/mesh/results/comparison.md

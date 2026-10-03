@@ -14,6 +14,20 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Executors;
 
 public final class GatewayMain {
+    private static String awaitReady(BenchService service, String label) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
+        Throwable last = null;
+        while (System.nanoTime() < deadline) {
+            try {
+                return service.work();
+            } catch (Throwable error) {
+                last = error;
+                Thread.sleep(250);
+            }
+        }
+        throw new IllegalStateException(label + " did not become ready within 30s", last);
+    }
+
     private static void respond(HttpExchange exchange, int status, String body) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("content-type", "application/json; charset=utf-8");
@@ -53,7 +67,7 @@ public final class GatewayMain {
         meshReference.setProtocol(CommonConstants.TRIPLE);
         meshReference.setTimeout(3000);
         meshReference.setRetries(0);
-        meshReference.setCheck(true);
+        meshReference.setCheck(false);
         meshReference.setLoadbalance("p2c");
 
         DubboBootstrap bootstrap = DubboBootstrap.getInstance();
@@ -67,9 +81,10 @@ public final class GatewayMain {
         BenchService direct = directReference.get();
         BenchService mesh = meshReference.get();
 
-        // Warm both references before exposing the HTTP benchmark adapter.
-        direct.work();
-        mesh.work();
+        // Registration and consumer discovery are asynchronous. Only expose
+        // the benchmark gateway after both references can complete real calls.
+        awaitReady(direct, "direct Dubbo reference");
+        awaitReady(mesh, "registry-backed Dubbo reference");
 
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", httpPort), 256);
         server.setExecutor(Executors.newFixedThreadPool(Math.max(32, Runtime.getRuntime().availableProcessors() * 16)));
