@@ -1,0 +1,163 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bench-direct
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bench-linkerd
+  annotations:
+    linkerd.io/inject: enabled
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: bench-direct
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: bench-backend
+  template:
+    metadata:
+      labels:
+        app: bench-backend
+    spec:
+      containers:
+        - name: app
+          image: openmesh-meshbench-app:local
+          imagePullPolicy: Never
+          env:
+            - name: INSTANCE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: bench-direct
+spec:
+  selector:
+    app: bench-backend
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: bench-direct
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bench-gateway
+  template:
+    metadata:
+      labels:
+        app: bench-gateway
+    spec:
+      containers:
+        - name: app
+          image: openmesh-meshbench-app:local
+          imagePullPolicy: Never
+          env:
+            - name: UPSTREAM
+              value: http://backend:8080/work
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: bench-direct
+spec:
+  selector:
+    app: bench-gateway
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: bench-linkerd
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: bench-backend
+  template:
+    metadata:
+      labels:
+        app: bench-backend
+    spec:
+      containers:
+        - name: app
+          image: openmesh-meshbench-app:local
+          imagePullPolicy: Never
+          env:
+            - name: INSTANCE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: bench-linkerd
+spec:
+  selector:
+    app: bench-backend
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: bench-linkerd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bench-gateway
+  template:
+    metadata:
+      labels:
+        app: bench-gateway
+    spec:
+      containers:
+        - name: app
+          image: openmesh-meshbench-app:local
+          imagePullPolicy: Never
+          env:
+            - name: UPSTREAM
+              value: http://backend:8080/work
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: bench-linkerd
+spec:
+  selector:
+    app: bench-gateway
+  ports:
+    - port: 8080
+      targetPort: 8080

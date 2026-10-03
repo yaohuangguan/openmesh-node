@@ -415,15 +415,18 @@ Every published subpath is exercised through real packed-tarball CJS + ESM smoke
 
 OpenMesh does not market itself as “the fastest Node.js framework.”
 
-The recorded 0.4.0 release benchmark uses the same machine, workload, warmup, process isolation, and load generator for both OpenMesh and the comparison baseline. Across five small loopback workloads, the geometric-mean normalized throughput ratio was **98.0%**, with **0 request errors, timeouts, or non-2xx responses across 30 recorded runs**.
+The public benchmark focus is the **cost of mesh/runtime features**: service discovery, load balancing, traffic policy, resiliency, workload identity and sidecar-vs-proxyless architecture. Cross-language results are normalized against each runtime's own direct service-call baseline so a Java/Go/Rust/Node language difference is not mistaken for mesh overhead.
 
-The benchmark exists to answer a more useful question:
+The comparison set is designed around:
 
-> Did the runtime features make the native request path materially worse?
+- OpenMesh 0.5 — Node.js, application-native / proxyless;
+- Apache Dubbo 3.3.x — Java, application-aware / proxyless service governance;
+- Dapr 1.18 — Go sidecar distributed-application runtime;
+- Linkerd 2.20 — Rust sidecar service mesh.
 
-CI enforces normalized regression budgets on every change.
+The existing Fastify microbenchmark remains an **internal HTTP hot-path regression guard**, not the headline performance claim.
 
-[Method, raw rounds, limits, and reproducibility](docs/performance.md)
+[Cross-runtime mesh methodology](docs/mesh-benchmark.md) · [Performance history and CI guard](docs/performance.md)
 
 ## Run the complete microservice demo
 

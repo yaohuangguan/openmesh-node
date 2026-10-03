@@ -25,7 +25,8 @@ Start with the website documentation for the shortest path, then use the deep te
 | [Distributed services and HTTP peers](distributed.md) | peer selection, admission, deadlines, retries, circuits and streaming |
 | [Services and control plane](services.md) | registration, discovery, SSE watches, configuration CAS, scoped credentials and Redis |
 | [Observability](observability.md) | lifecycle events, OpenTelemetry-compatible metrics and trace propagation |
-| [Performance](performance.md) | preserved benchmark reports, methodology and CI regression budgets |
+| [Performance](performance.md) | current performance strategy, preserved historical reports and CI regression budgets |
+| [Cross-runtime mesh benchmark](mesh-benchmark.md) | normalized mesh tax across OpenMesh, Dubbo, Dapr and Linkerd |
 
 ## Operations and project
 

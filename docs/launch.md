@@ -93,13 +93,16 @@ Shows native OpenMesh routes alongside real Express/Fastify integrations.
 
 ### Release benchmark
 
+The public benchmark is now the cross-runtime mesh suite. Run the OpenMesh adapter locally with:
+
 ```sh
-node benchmarks/run.cjs --duration=3 --rounds=3 --connections=32 \
-  --frameworks=openmesh,fastify \
-  --scenarios=plaintext,json,params,body,middleware
+npm run bench:mesh -- --duration=5 --rounds=5 --connections=32 \
+  --adapter=openmesh --output=results/openmesh-mesh-release.json
 ```
 
-Always share the environment, raw rounds, limitations, and same-run comparison methodology with benchmark numbers.
+Release evidence should compare OpenMesh with the pinned Dubbo / Dapr / Linkerd adapters on the same Linux runner class and report normalized mesh tax, p99, memory and failover. The older OpenMesh/Fastify microbenchmark remains an internal HTTP hot-path regression guard only.
+
+Always share the environment, raw rounds, limitations, exact runtime versions, topology and same-run methodology with benchmark numbers. See [Cross-runtime mesh benchmark](mesh-benchmark.md).
 
 ## GitHub positioning
 
