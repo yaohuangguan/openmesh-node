@@ -1,0 +1,120 @@
+name: Sync GitHub Release
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: github-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'yaohuangguan/openmesh-node'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG="$GITHUB_REF_NAME"
+          else
+            TAG="v$VERSION"
+          fi
+
+          if ! git rev-parse "$TAG^{commit}" >/dev/null 2>&1; then
+            echo "No matching tag $TAG yet; skipping GitHub Release sync."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          TAG_VERSION="$(git show "$TAG:package.json" | node -e "let s=''; process.stdin.on('data',d=>s+=d); process.stdin.on('end',()=>process.stdout.write(JSON.parse(s).version))")"
+          if [ "$TAG" != "v$TAG_VERSION" ]; then
+            echo "Tag $TAG does not match tagged package version v$TAG_VERSION"
+            exit 1
+          fi
+
+          echo "available=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build release notes
+        if: steps.release.outputs.available == 'true'
+        shell: bash
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          node <<'NODE'
+          const { execFileSync } = require('node:child_process');
+          const { writeFileSync } = require('node:fs');
+
+          const tag = process.env.TAG;
+          const version = process.env.VERSION;
+          const changelog = execFileSync('git', ['show', tag + ':CHANGELOG.md'], { encoding: 'utf8' });
+          const lines = changelog.split(/\r?\n/);
+          const start = lines.findIndex(line => line.startsWith('## ' + version));
+          const section = [];
+
+          if (start >= 0) {
+            for (let i = start + 1; i < lines.length; i++) {
+              if (lines[i].startsWith('## ')) break;
+              section.push(lines[i]);
+            }
+          }
+
+          while (section.length && !section[0].trim()) section.shift();
+          while (section.length && !section[section.length - 1].trim()) section.pop();
+
+          const notes = [
+            '# OpenMesh ' + version,
+            '',
+            'Published to npm:',
+            '',
+            '```sh',
+            'npm install openmesh-node@' + version,
+            '```',
+            '',
+            section.length ? section.join('\n') : 'See CHANGELOG.md for release details.',
+            '',
+            '## Links',
+            '',
+            '- npm: https://www.npmjs.com/package/openmesh-node',
+            '- documentation: https://github.com/yaohuangguan/openmesh-node#documentation',
+            '- performance report: https://github.com/yaohuangguan/openmesh-node/blob/' + tag + '/docs/performance.md',
+            '- raw release benchmark: https://github.com/yaohuangguan/openmesh-node/blob/' + tag + '/benchmarks/results/release-' + version + '.json'
+          ].join('\n');
+
+          writeFileSync('release-notes.md', notes + '\n');
+          NODE
+
+      - name: Create GitHub Release if missing
+        if: steps.release.outputs.available == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "GitHub Release $TAG already exists."
+            exit 0
+          fi
+
+          gh release create "$TAG" \
+            --title "OpenMesh $VERSION" \
+            --notes-file release-notes.md \
+            --verify-tag
