@@ -1,5 +1,6 @@
 import openmesh = require('openmesh-node');
 import plugins = require('openmesh-node/plugins');
+import db = require('openmesh-node/db');
 import mesh = require('openmesh-node/mesh');
 import services = require('openmesh-node/services');
 import otel = require('openmesh-node/otel');
@@ -122,3 +123,21 @@ void cjsIdentified.workload.rotate(
   { ca: 'next-ca', cert: 'next-cert', key: 'next-key' },
   { graceMs: 30_000 }
 );
+
+
+const cjsDbClient = {
+  user: {
+    async findMany() {
+      return [{ id: '1' }];
+    }
+  }
+};
+const cjsDatabase = db.database(cjsDbClient, {
+  name: 'primary',
+  ping: () => true
+});
+openmesh()
+  .register(cjsDatabase)
+  .get('/db-users', async () => cjsDatabase.client.user.findMany());
+const cjsDatabaseReady: boolean = cjsDatabase.ready;
+void cjsDatabaseReady;

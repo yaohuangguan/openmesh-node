@@ -12,6 +12,7 @@
 - Add per-request peer filtering to `PeerPool` so retries and circuits stay inside the selected traffic subset.
 - Add simple typed route shorthand directly on `app.get/post/...`: Standard Schema body/params/query/headers inference plus compile-time and runtime response status/body contracts without requiring a custom validator compiler.
 - Add complete HTTP lifecycle hooks: `onRequest`, `preParsing`, `preValidation`, `preHandler`, `postHandler`, `preSerialization`, `preSend`, `onResponse`, and `onError`, with plugin-scope and route-level composition.
+- Add `openmesh-node/db`: a zero-query-abstraction database resource for existing ORM/SQL clients. It preserves the original client type while adding application startup/shutdown lifecycle, readiness checks, named multi-database resources, and optional typed transaction adapters. CRUD + database lifecycle is covered end to end.
 - Split response preparation from socket writes so `preSerialization` sees the semantic body while `preSend` sees the final serialized string/bytes/stream.
 - Expand body parsing plugins with universal `bodyParser()` plus JSON, text, raw, URL-encoded form, and buffered multipart parsers with explicit size limits.
 - Keep `openmesh-node/http` as an optional advanced contract API: immutable route values, `pipe()`, typed derivation, and contract-first `implement()` for tooling-heavy use cases rather than the default CRUD learning path.

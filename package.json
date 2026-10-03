@@ -1,7 +1,7 @@
 {
   "name": "openmesh-node",
   "version": "0.4.0",
-  "description": "An application-native service mesh and typed HTTP runtime for Node.js with discovery, traffic policy, backpressure, streaming, and durable control-plane adapters.",
+  "description": "A TypeScript-first Node.js backend runtime for typed APIs and application-native microservices with database lifecycle, service discovery, traffic policy, backpressure, and streaming.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/yaohuangguan/openmesh-node.git"
@@ -41,6 +41,16 @@
       "require": {
         "types": "./dist/types/http/index.d.ts",
         "default": "./dist/cjs/http/index.js"
+      }
+    },
+    "./db": {
+      "import": {
+        "types": "./dist/types/db/index.d.mts",
+        "default": "./dist/esm/db/index.js"
+      },
+      "require": {
+        "types": "./dist/types/db/index.d.ts",
+        "default": "./dist/cjs/db/index.js"
       }
     },
     "./mesh": {
@@ -168,7 +178,9 @@
     "streaming",
     "redis",
     "http",
-    "framework"
+    "framework",
+    "database",
+    "orm"
   ],
   "license": "MIT",
   "publishConfig": {

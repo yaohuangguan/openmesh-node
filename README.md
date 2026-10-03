@@ -17,7 +17,7 @@ npm install openmesh-node
 
 **v0.5 is currently a preview branch.** The new developer surface is intentionally smaller: typed `app.get/post/...` for normal APIs, then `app.mesh('service')` when the application grows. See [Application-native Mesh](docs/mesh-runtime.md) and [Advanced HTTP Contracts](docs/functional-http.md).
 
-[Get started](#start-in-30-seconds) · [Why OpenMesh](#why-openmesh) · [Architecture](#architecture) · [Microservices](docs/services.md) · [Peer routing](docs/distributed.md) · [Observability](docs/observability.md) · [Performance](docs/performance.md) · [API](docs/api.md)
+[Get started](#start-in-30-seconds) · [Why OpenMesh](#why-openmesh) · [Architecture](#architecture) · [Databases](docs/database.md) · [Microservices](docs/services.md) · [Peer routing](docs/distributed.md) · [Observability](docs/observability.md) · [Performance](docs/performance.md) · [API](docs/api.md)
 
 ---
 
@@ -45,6 +45,24 @@ app.post('/users/:id', {
   }));
 });
 ```
+
+Bring the database library you already use. OpenMesh does not add a query language:
+
+```ts
+import { database } from 'openmesh-node/db';
+
+const db = database(prisma, {
+  connect: client => client.$connect(),
+  disconnect: client => client.$disconnect(),
+  transaction: (client, work) => client.$transaction(work)
+});
+
+app.register(db);
+
+app.get('/users', async () => db.client.user.findMany());
+```
+
+The same resource API works with connectionless clients such as Drizzle, explicit lifecycle clients such as TypeORM, and transaction builders such as Kysely. The original client type is preserved. See [Databases and ORMs](docs/database.md).
 
 When that application splits into services, the programming model grows instead of changing:
 
@@ -98,6 +116,7 @@ Most Node.js HTTP libraries stop at the server boundary. OpenMesh keeps going.
 | How do long-lived responses behave? | True streaming with explicit post-header no-replay semantics |
 | How does topology update without restarts? | Registration leases + push watches |
 | How do I change config safely at runtime? | Immutable snapshots + revision/epoch CAS |
+| How do I use my existing ORM or SQL client? | Typed database resources with lifecycle, health and optional transaction adapters |
 | How do I persist the control plane? | Durable Redis adapters |
 | How do services authenticate each other? | SPIFFE-style workload identity + mutual TLS + inbound allow-lists |
 | How do I limit control-plane access? | Scoped credentials + service/namespace boundaries |
@@ -383,6 +402,7 @@ Those integrations are optional. The native request path does not require them.
 | `openmesh-node` | Typed HTTP runtime + `app.mesh()` facade |
 | `openmesh-node/plugins` | Native plugins and body parsers |
 | `openmesh-node/http` | Advanced functional contract API (0.5 preview) |
+| `openmesh-node/db` | ORM/database resource lifecycle, health and transaction adapters |
 | `openmesh-node/mesh` | Low-level peer routing / client data plane |
 | `openmesh-node/services` | Registration, discovery, config, control plane |
 | `openmesh-node/services/redis` | Durable Redis adapters |

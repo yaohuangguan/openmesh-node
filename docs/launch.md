@@ -194,7 +194,7 @@ The release includes:
 - benchmark regression CI;
 - Linux/Windows package verification.
 
-The **0.5 preview branch** adds the smaller developer path described above: simple Standard Schema typed routes, `app.mesh('service')`, automatic request-context propagation, metadata traffic targeting/weighted subsets, locality failover, live traffic policy, complete HTTP lifecycle hooks, expanded body-parser plugins, and SPIFFE-style workload identity with service-to-service mTLS.
+The **0.5 preview branch** adds the smaller developer path described above: simple Standard Schema typed CRUD routes, `openmesh-node/db` for ORM/database lifecycle without replacing the ORM API, `app.mesh('service')`, automatic request-context propagation, metadata traffic targeting/weighted subsets, locality failover, live traffic policy, complete HTTP lifecycle hooks, expanded body-parser plugins, and SPIFFE-style workload identity with service-to-service mTLS.
 
 The identity layer verifies CA chains and exact workload URI SANs, supports inbound service allow-lists, and can hot-rotate supplied cert/key material without process restart. Certificate issuance, renewal scheduling, and revocation distribution are **not** automated by OpenMesh yet. Keep that boundary visible in launch material rather than implying transparent Istio/Linkerd parity.
 

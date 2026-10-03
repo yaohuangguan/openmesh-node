@@ -1,6 +1,7 @@
 import openmesh, { definePlugin, HttpError, created as rootCreated, reply as rootReply, type AppEvent, type Context, type StandardSchemaV1 as RootStandardSchemaV1, type MeshedOpenMesh, type WorkloadIdentityOptions } from 'openmesh-node';
 import { jsonBody, bodyParser, textBody, rawBody, formBody, multipartBody, requestContext, health } from 'openmesh-node/plugins';
 import { POST, pipe, input, returns, implement, created, ok, api, type StandardSchemaV1 } from 'openmesh-node/http';
+import { database, type DatabaseResource } from 'openmesh-node/db';
 import { PeerPool, type PeerPoolEvent, type PeerPoolStats, type PeerSelectionStrategy, type PeerTlsOptions } from 'openmesh-node/mesh';
 import { ControlClient, controlPlane, serviceRegistration, ConfigStore, ServiceRegistry, type ControlCredential, type ControlPlaneInfo } from 'openmesh-node/services';
 import { createOpenTelemetryObservers, type OpenTelemetryMeter } from 'openmesh-node/otel';
@@ -279,3 +280,49 @@ await secureMeshed.workload.rotate(
   },
   { graceMs: 30_000 }
 );
+
+
+type ExampleDb = {
+  connected: boolean;
+  user: {
+    findMany(): Promise<Array<{ id: string; name: string }>>;
+  };
+};
+
+type ExampleTx = ExampleDb & { transactionId: string };
+
+const exampleClient: ExampleDb = {
+  connected: false,
+  user: {
+    async findMany() {
+      return [{ id: '1', name: 'Sam' }];
+    }
+  }
+};
+
+const typedDatabase: DatabaseResource<ExampleDb, ExampleTx> = database<ExampleDb, ExampleTx>(
+  exampleClient,
+  {
+    name: 'primary',
+    async connect(client) {
+      client.connected = true;
+    },
+    async disconnect(client) {
+      client.connected = false;
+    },
+    ping: client => client.connected,
+    transaction: async (client, work) =>
+      work({ ...client, transactionId: 'tx-1' })
+  }
+);
+
+openmesh()
+  .register(typedDatabase)
+  .get('/database-users', async () => typedDatabase.client.user.findMany());
+
+const transactionUsers = await typedDatabase.transaction(tx => {
+  const transactionId: string = tx.transactionId;
+  void transactionId;
+  return tx.user.findMany();
+});
+void transactionUsers;
