@@ -245,6 +245,7 @@ async function main() {
   if (process.platform !== 'linux') throw new Error('Envoy adapter requires Linux Docker host networking');
   const pki = await createPki(['envoy-gateway', 'envoy-backend']);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openmesh-envoy-bench-'));
+  fs.chmodSync(dir, 0o755);
   fs.writeFileSync(path.join(dir, 'ca.pem'), pki.ca);
   fs.writeFileSync(path.join(dir, 'gateway.pem'), pki.workloads['envoy-gateway'].cert);
   fs.writeFileSync(path.join(dir, 'gateway-key.pem'), pki.workloads['envoy-gateway'].key);
@@ -370,4 +371,4 @@ async function main() {
   }
 }
 
-main().catch(error => { console.error(error); process.exitCode = 1; process.disconnect?.(); });
+main().catch(error => { console.error(error); process.disconnect?.(); process.exit(1); });
