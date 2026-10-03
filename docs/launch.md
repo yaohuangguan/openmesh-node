@@ -10,7 +10,7 @@ Repository: https://github.com/yaohuangguan/openmesh-node
 
 npm: https://www.npmjs.com/package/openmesh-node
 
-Current release: **0.4.0**
+Current release: **0.5.0**
 
 ## Short introduction
 
@@ -52,7 +52,7 @@ When presenting OpenMesh, lead with these ideas in order:
 >
 > The service handle is backed by the existing OpenMesh runtime: discovery watches, metadata traffic subsets, P2C/rendezvous routing, per-service admission, adaptive concurrency, deadlines, retry rules, circuits, streaming semantics, trace propagation, and peer metrics. The control plane adds registration leases, scoped credentials, live config CAS, and durable Redis adapters.
 >
-> The key implementation choice is application-native rather than sidecar-native: there is no extra proxy hop in the OpenMesh request path. The 0.5 preview authenticates service calls with SPIFFE-style workload identity and mutual TLS and can hot-rotate already-issued credentials; certificate issuance stays outside the runtime. OpenMesh 0.4 remains the current npm release; the smaller `app.mesh()` developer surface is the 0.5 preview.
+> The key implementation choice is application-native rather than sidecar-native: there is no extra proxy hop in the OpenMesh request path. OpenMesh 0.5 authenticates service calls with SPIFFE-style workload identity and mutual TLS and can hot-rotate already-issued credentials; certificate issuance stays outside the runtime.
 
 ## Demonstrations
 
@@ -179,7 +179,7 @@ Stars and download counts are useful signals, but they are not substitutes for r
 
 ## Current release status
 
-OpenMesh **0.4.0 is published on npm**.
+OpenMesh **0.5.0 is published on npm**.
 
 The release includes:
 

@@ -13,7 +13,7 @@ OpenMesh is a TypeScript-first Node.js runtime for building ordinary HTTP APIs t
 npm install openmesh-node
 ```
 
-**v0.4.0 is live on npm.** It ships ESM + CommonJS + declarations and keeps the native HTTP core at **zero runtime dependencies**.
+**v0.5.0 is the current npm release.** It ships ESM + CommonJS + declarations and keeps the native HTTP core at **zero runtime dependencies**.
 
 **v0.5 is currently a preview branch.** The new developer surface is intentionally smaller: typed `app.get/post/...` for normal APIs, then `app.mesh('service')` when the application grows. See [Application-native Mesh](docs/mesh-runtime.md) and [Advanced HTTP Contracts](docs/functional-http.md).
 
@@ -491,4 +491,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
-**OpenMesh 0.4.0** · MIT licensed · [npm](https://www.npmjs.com/package/openmesh-node) · [source](https://github.com/yaohuangguan/openmesh-node) · [changelog](CHANGELOG.md)
+**OpenMesh 0.5.0** · MIT licensed · [npm](https://www.npmjs.com/package/openmesh-node) · [source](https://github.com/yaohuangguan/openmesh-node) · [changelog](CHANGELOG.md)

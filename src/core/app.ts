@@ -824,7 +824,7 @@ export class OpenMesh {
   get server(): http.Server | https.Server | null { return this._root._server; }
   get phase(): string { return this._root._phase; }
   get prefix(): string { return this._prefix; }
-  get version(): string { return '0.4.0'; }
+  get version(): string { return '0.5.0'; }
 
   _updateTlsContext(tls: HttpsServerOptions): this {
     const root = this._root;

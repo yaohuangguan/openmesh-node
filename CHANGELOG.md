@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0 (unreleased)
+## 0.5.0 - 2026-10-03
 
 - Add the application-native mesh facade: configure `openmesh({ service, mesh })`, get lazy service handles with `app.mesh(name)`, and keep the existing `ControlClient` / `ServicePool` / `PeerPool` machinery underneath.
 - Add mesh HTTP helpers (`get/post/put/patch/delete`) that return parsed successful payloads, preserve raw/streaming escape hatches, propagate request-id/trace context automatically, and expose final remote failures as `MeshHttpError`.
