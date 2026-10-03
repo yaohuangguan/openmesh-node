@@ -8,3 +8,4 @@ go-bench.exe
 .npmrc
 coverage/
 *.log
+benchmarks/mesh/results/

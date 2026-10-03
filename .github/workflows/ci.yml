@@ -72,3 +72,22 @@ jobs:
         with:
           name: benchmark-node24-ubuntu
           path: benchmarks/results/ci.json
+
+  mesh-benchmark-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Run OpenMesh mesh benchmark contract smoke
+        run: npm run bench:mesh:smoke
+      - name: Upload mesh benchmark smoke report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mesh-benchmark-openmesh-smoke
+          path: benchmarks/mesh/results/mesh-smoke.json

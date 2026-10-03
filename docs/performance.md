@@ -1,6 +1,38 @@
 # Performance reports
 
-> **Current package: OpenMesh 0.5.0.** The latest preserved dedicated release benchmark below is from 0.4.0. No new 0.5 release-level benchmark is claimed here; CI continues to run normalized OpenMesh/Fastify regression checks on the current code.
+> **Current package: OpenMesh 0.5.0.** Public performance work now focuses on cross-runtime **mesh overhead**, not a Node HTTP-framework shootout. The older Fastify comparisons below are preserved as historical evidence and the same harness remains useful as an internal HTTP hot-path regression guard.
+
+## Current benchmark strategy — cross-runtime mesh cost
+
+OpenMesh 0.5 is primarily a service runtime, so the useful question is no longer “can a trivial route beat another Node framework?” It is:
+
+> How much throughput, tail latency, memory and failover cost does each runtime add when service discovery, load balancing, traffic policy, resiliency and mTLS are enabled?
+
+The new suite normalizes each implementation against its own direct service-call baseline. That makes comparisons across Node.js, Java, Go and Rust substantially more meaningful than comparing absolute language throughput.
+
+Primary proxyless/application-aware comparison:
+
+- OpenMesh 0.5 — Node.js;
+- Apache Dubbo 3.3.x — Java.
+
+Secondary sidecar cost envelope:
+
+- Dapr 1.18 — Go sidecar runtime;
+- Linkerd 2.20 — Rust sidecar proxy.
+
+Headline metrics are mesh RPS retention, p99 latency tax, traffic-policy tax, warm memory, CPU and failure-convergence time. Absolute requests/second remains in the raw report but is not the ranking metric.
+
+See [Cross-runtime mesh benchmark methodology](mesh-benchmark.md).
+
+Local OpenMesh harness:
+
+```sh
+npm run bench:mesh -- --duration=5 --rounds=5 --connections=32   --adapter=openmesh --output=results/openmesh-mesh-local.json
+```
+
+The one-second `bench:mesh:smoke` command only validates the adapter/harness contract and must not be used as performance evidence.
+
+No cross-runtime 0.5 release table is published yet. Results will be added only after all compared adapters run on the same pinned Linux runner class with preserved raw artifacts.
 
 ## Latest preserved release benchmark — 0.4.0
 
