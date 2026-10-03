@@ -82,7 +82,7 @@ const charge = await payments.post('/charges', {
 });
 ```
 
-That call reuses OpenMesh's existing discovery watch, per-service bulkhead, deadlines, retry policy, circuit state, peer routing, tracing, and metrics. There is no sidecar hop.
+That call reuses OpenMesh's existing discovery watch, per-service bulkhead, deadlines, retry policy, circuit state, peer routing, tracing, and metrics. Traffic rules, weighted canaries, locality preference/failover, and live control-plane policy updates sit above the same warm service pool. There is no sidecar hop.
 
 The 0.5 preview does **not** yet provide workload identity or automatic service-to-service mTLS, so it should not be described as a drop-in Istio/Linkerd replacement.
 

@@ -88,6 +88,10 @@ test('app.mesh provides lazy service calls, traffic policy and trace propagation
       },
       services: {
         payments: {
+          trafficConfig: {
+            namespace: 'mesh-payments',
+            key: 'traffic'
+          },
           traffic: {
             routes: [
               {
@@ -224,6 +228,64 @@ test('app.mesh provides lazy service calls, traffic policy and trace propagation
         return true;
       }
     );
+
+    const trafficSnapshot = await registrationClient.getConfig('mesh-payments');
+    assert.equal(payments.trafficRevision, trafficSnapshot.revision);
+
+    const liveTraffic = await registrationClient.setConfig(
+      'mesh-payments',
+      {
+        traffic: {
+          split: [
+            { name: 'all-canary', match: { version: 'v2' }, weight: 100 }
+          ],
+          prefer: [
+            { name: 'local', match: { region: 'nz' } },
+            { name: 'regional-failover', match: { region: 'au' } }
+          ],
+          fallback: 'error'
+        }
+      },
+      {
+        expectedRevision: trafficSnapshot.revision,
+        expectedEpoch: trafficSnapshot.epoch
+      }
+    );
+
+    await waitFor(
+      () => payments.trafficRevision === liveTraffic.revision,
+      'live traffic policy did not reach the mesh service'
+    );
+
+    for (let i = 0; i < 12; i++) {
+      const liveResult = await payments.get('/version', { key: 'live-' + i });
+      assert.equal(liveResult.version, 'v2');
+    }
+
+    const invalidTraffic = await registrationClient.setConfig(
+      'mesh-payments',
+      {
+        traffic: {
+          split: [
+            { match: { version: 'v1' }, weight: 0 }
+          ]
+        }
+      },
+      {
+        expectedRevision: liveTraffic.revision,
+        expectedEpoch: liveTraffic.epoch
+      }
+    );
+
+    await waitFor(
+      () => payments.trafficLastError !== null,
+      'invalid live traffic policy did not surface an error'
+    );
+    assert.equal(invalidTraffic.revision, liveTraffic.revision + 1);
+    assert.equal(payments.trafficRevision, liveTraffic.revision);
+
+    const afterInvalid = await payments.get('/version', { key: 'last-good' });
+    assert.equal(afterInvalid.version, 'v2');
 
     const stats = await payments.poolStats();
     assert.equal(stats.maxInflight, 32);

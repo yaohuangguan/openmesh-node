@@ -71,6 +71,7 @@ export type {
   MeshTrafficWhen,
   MeshTrafficRoute,
   MeshTrafficPreference,
+  MeshTrafficConfigOptions,
   MeshMetadataMatch,
   MeshRawRequestOptions,
   MeshStreamRequestOptions,

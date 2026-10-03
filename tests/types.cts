@@ -84,5 +84,11 @@ const cjsPolicy: openmesh.MeshTrafficPolicy = {
 };
 void cjsPolicy;
 
+const cjsTrafficConfig: openmesh.MeshTrafficConfigOptions = {
+  namespace: 'mesh-payments',
+  key: 'traffic'
+};
+void cjsTrafficConfig;
+
 const cjsPayments = cjsMeshed.mesh('payments');
 void cjsPayments.post<{ id: string }>('/charges', { body: { amount: 10 } });

@@ -193,6 +193,10 @@ const meshed: MeshedOpenMesh = openmesh({
     },
     services: {
       payments: {
+        trafficConfig: {
+          namespace: 'mesh-payments',
+          key: 'traffic'
+        },
         traffic: {
           routes: [
             {

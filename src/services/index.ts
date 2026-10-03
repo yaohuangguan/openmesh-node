@@ -1195,8 +1195,16 @@ export interface MeshTrafficPolicy {
   fallback?: 'all' | 'error';
 }
 
+export interface MeshTrafficConfigOptions {
+  namespace: string;
+  key?: string;
+  required?: boolean;
+  watch?: Omit<WatchOptions, 'validate' | 'onUpdate'>;
+}
+
 export type MeshServiceOptions = ServicePoolOptions & {
   traffic?: MeshTrafficPolicy;
+  trafficConfig?: MeshTrafficConfigOptions;
 };
 
 export type MeshRawRequestOptions = PeerOptions & {
@@ -1329,6 +1337,28 @@ function validateTrafficPolicy(policy: MeshTrafficPolicy | undefined): void {
   }
 }
 
+function validateTrafficConfig(config: MeshTrafficConfigOptions | undefined): void {
+  if (config === undefined) return;
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    throw new TypeError('Mesh trafficConfig must be an object');
+  }
+  if (typeof config.namespace !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(config.namespace)) {
+    throw new TypeError('Mesh trafficConfig namespace must be a valid OpenMesh name');
+  }
+  if (
+    config.key !== undefined &&
+    (typeof config.key !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(config.key))
+  ) {
+    throw new TypeError('Mesh trafficConfig key must be a valid OpenMesh name');
+  }
+  if (config.required !== undefined && typeof config.required !== 'boolean') {
+    throw new TypeError('Mesh trafficConfig required must be boolean');
+  }
+  if (config.watch !== undefined && (!config.watch || typeof config.watch !== 'object' || Array.isArray(config.watch))) {
+    throw new TypeError('Mesh trafficConfig watch must be an object');
+  }
+}
+
 function mergeMeshServiceOptions(
   defaults: MeshServiceOptions | undefined,
   configured: MeshServiceOptions | undefined,
@@ -1347,6 +1377,7 @@ function mergeMeshServiceOptions(
     };
   }
   validateTrafficPolicy(merged.traffic);
+  validateTrafficConfig(merged.trafficConfig);
   return merged;
 }
 
@@ -1399,6 +1430,10 @@ export class MeshService {
   readonly service: string;
   readonly options: Readonly<MeshServiceOptions>;
   private _poolPromise: Promise<ServicePool> | null = null;
+  private _trafficInitPromise: Promise<void> | null = null;
+  private _trafficWatcher: ConfigWatcher | null = null;
+  private _traffic: MeshTrafficPolicy | undefined;
+  private _trafficRevision: number | null = null;
   private _closed = false;
   private _counter = 0;
 
@@ -1406,17 +1441,91 @@ export class MeshService {
     this.runtime = runtime;
     this.service = name(service);
     validateTrafficPolicy(options.traffic);
+    validateTrafficConfig(options.trafficConfig);
     this.options = Object.freeze({ ...options });
+    this._traffic = options.traffic;
+  }
+
+  get trafficPolicy(): Readonly<MeshTrafficPolicy> | undefined {
+    return this._traffic;
+  }
+
+  get trafficRevision(): number | null {
+    return this._trafficRevision;
+  }
+
+  get trafficLastError(): Error | null {
+    return this._trafficWatcher?.lastError || null;
+  }
+
+  private _trafficConfigValue(values: Readonly<Record<string, unknown>>): MeshTrafficPolicy | undefined {
+    const config = this.options.trafficConfig;
+    if (!config) return this.options.traffic;
+
+    const key = config.key || 'traffic';
+    const value = values[key];
+    if (value === undefined) {
+      if (config.required) {
+        throw new TypeError('Missing required mesh traffic policy at ' + config.namespace + '.' + key);
+      }
+      return this.options.traffic;
+    }
+
+    validateTrafficPolicy(value as MeshTrafficPolicy);
+    return value as MeshTrafficPolicy;
+  }
+
+  private _applyTrafficSnapshot(snapshot: ConfigSnapshot): void {
+    this._traffic = this._trafficConfigValue(snapshot.values);
+    this._trafficRevision = snapshot.revision;
+  }
+
+  private _initTrafficConfig(): Promise<void> {
+    const config = this.options.trafficConfig;
+    if (!config) return Promise.resolve();
+    if (this._trafficInitPromise) return this._trafficInitPromise;
+
+    const key = config.key || 'traffic';
+    this._trafficInitPromise = this.runtime.client.watchConfig(config.namespace, {
+      ...(config.watch || {}),
+      validate: values => {
+        const value = values[key];
+        if (value === undefined) {
+          if (config.required) {
+            throw new TypeError('Missing required mesh traffic policy at ' + config.namespace + '.' + key);
+          }
+          return;
+        }
+        validateTrafficPolicy(value as MeshTrafficPolicy);
+      },
+      onUpdate: current => {
+        this._applyTrafficSnapshot(current);
+      }
+    }).then(watcher => {
+      if (this._closed) {
+        watcher.stop();
+        throw new PeerError('Mesh service is closed', 'POOL_CLOSED');
+      }
+      this._trafficWatcher = watcher;
+      this._applyTrafficSnapshot(watcher.snapshot);
+    }).catch(error => {
+      this._trafficInitPromise = null;
+      throw error;
+    });
+
+    return this._trafficInitPromise;
   }
 
   private _pool(): Promise<ServicePool> {
     if (this._closed) return Promise.reject(new PeerError('Mesh service is closed', 'POOL_CLOSED'));
     if (!this._poolPromise) {
-      const { traffic: _traffic, ...poolOptions } = this.options;
-      this._poolPromise = this.runtime.client.service(this.service, poolOptions).catch(error => {
-        this._poolPromise = null;
-        throw error;
-      });
+      const { traffic: _traffic, trafficConfig: _trafficConfig, ...poolOptions } = this.options;
+      this._poolPromise = this._initTrafficConfig()
+        .then(() => this.runtime.client.service(this.service, poolOptions))
+        .catch(error => {
+          this._poolPromise = null;
+          throw error;
+        });
     }
     return this._poolPromise;
   }
@@ -1427,7 +1536,7 @@ export class MeshService {
       return options.target;
     }
 
-    const policy = this.options.traffic;
+    const policy = this._traffic;
     if (!policy) return null;
 
     const state = currentRequestContext();
@@ -1454,7 +1563,7 @@ export class MeshService {
   }
 
   private _candidatePeerIds(pool: ServicePool, options: MeshRawRequestOptions): readonly string[] | undefined {
-    const policy = this.options.traffic;
+    const policy = this._traffic;
     const match = this._selectTrafficMatch(options);
     const allowed = options.peerIds ? new Set(options.peerIds) : null;
 
@@ -1585,6 +1694,8 @@ export class MeshService {
   close(): void {
     if (this._closed) return;
     this._closed = true;
+    this._trafficWatcher?.stop();
+    this._trafficWatcher = null;
     const pending = this._poolPromise;
     this._poolPromise = null;
     if (pending) void pending.then(pool => pool.close(), () => {});
@@ -1618,8 +1729,10 @@ export class MeshRuntime {
     this._configured = Object.freeze({ ...(options.services || {}) });
 
     validateTrafficPolicy(this._defaults?.traffic);
+    validateTrafficConfig(this._defaults?.trafficConfig);
     for (const serviceOptions of Object.values(this._configured)) {
       validateTrafficPolicy(serviceOptions.traffic);
+      validateTrafficConfig(serviceOptions.trafficConfig);
     }
   }
 

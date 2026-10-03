@@ -314,6 +314,63 @@ v1 in Australia
 
 The version decision does not change during regional failover. If none of the preferred metadata subsets has members, OpenMesh falls back to the already-selected target's remaining instances. This makes `prefer` suitable for locality/zone affinity rather than hard authorization boundaries.
 
+## Live traffic policy
+
+Traffic policy does not have to be compiled into the application.
+
+A service can use a static policy as its startup fallback and watch a control-plane config namespace for live replacements:
+
+```ts
+services: {
+  payments: {
+    trafficConfig: {
+      namespace: 'mesh-payments',
+      key: 'traffic'
+    },
+
+    traffic: {
+      split: [
+        { match: { version: 'v1' }, weight: 90 },
+        { match: { version: 'v2' }, weight: 10 }
+      ]
+    }
+  }
+}
+```
+
+An operator can then update the existing OpenMesh config store:
+
+```ts
+const snapshot = await control.getConfig('mesh-payments');
+
+await control.setConfig(
+  'mesh-payments',
+  {
+    traffic: {
+      split: [
+        { match: { version: 'v2' }, weight: 100 }
+      ],
+      prefer: [
+        { match: { region: 'nz' } },
+        { match: { region: 'au' } }
+      ]
+    }
+  },
+  {
+    expectedRevision: snapshot.revision,
+    expectedEpoch: snapshot.epoch
+  }
+);
+```
+
+The gateway does not restart and its service pool is not rebuilt. New requests immediately use the new policy while discovery, circuits, admission state, and peer statistics stay warm.
+
+`service.trafficRevision` exposes the last applied control-plane revision. `service.trafficPolicy` exposes the current last-good policy.
+
+Live policies are validated before activation. If a pushed policy is invalid, the config watcher records `service.trafficLastError`, keeps the previous traffic revision, and continues routing with the last-good policy.
+
+Set `required: true` on `trafficConfig` when a missing policy should make the service handle fail to initialize rather than fall back to the static policy.
+
 ## Explicit targeting
 
 A call can target metadata directly:
