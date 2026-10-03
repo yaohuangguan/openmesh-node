@@ -1,7 +1,7 @@
 {
   "name": "openmesh-node",
   "version": "0.4.0",
-  "description": "A TypeScript-first Node.js service runtime with native HTTP, peer routing, service discovery, backpressure, streaming, and durable control-plane adapters.",
+  "description": "An application-native service mesh and typed HTTP runtime for Node.js with discovery, traffic policy, backpressure, streaming, and durable control-plane adapters.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/yaohuangguan/openmesh-node.git"
@@ -149,18 +149,21 @@
     "typescript": "7.0.2"
   },
   "keywords": [
-    "http",
-    "framework",
-    "middleware",
-    "node",
-    "fastify",
-    "express",
-    "koa",
-    "plugins",
+    "nodejs",
+    "typescript",
+    "service-mesh",
     "microservices",
-    "distributed",
-    "peer-to-peer",
-    "service-discovery"
+    "service-discovery",
+    "traffic-management",
+    "load-balancing",
+    "backpressure",
+    "circuit-breaker",
+    "distributed-systems",
+    "opentelemetry",
+    "streaming",
+    "redis",
+    "http",
+    "framework"
   ],
   "license": "MIT",
   "publishConfig": {

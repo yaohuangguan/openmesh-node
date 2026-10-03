@@ -1,4 +1,4 @@
-import openmesh, { definePlugin, HttpError, type AppEvent, type Context } from 'openmesh-node';
+import openmesh, { definePlugin, HttpError, created as rootCreated, reply as rootReply, type AppEvent, type Context, type StandardSchemaV1 as RootStandardSchemaV1, type MeshedOpenMesh } from 'openmesh-node';
 import { jsonBody, bodyParser, textBody, rawBody, formBody, multipartBody, requestContext, health } from 'openmesh-node/plugins';
 import { POST, pipe, input, returns, implement, created, ok, api, type StandardSchemaV1 } from 'openmesh-node/http';
 import { PeerPool, type PeerPoolEvent, type PeerPoolStats, type PeerSelectionStrategy } from 'openmesh-node/mesh';
@@ -137,3 +137,80 @@ openmesh()
   .addHook('preSend', (ctx, value) => { void ctx.response; void value; })
   .addHook('onResponse', ctx => { void ctx.status; })
   .addHook('onError', (error, ctx) => { const message: string = error.message; void message; void ctx.path; });
+
+
+function rootStandard<T>(): RootStandardSchemaV1<unknown, T> {
+  return null as unknown as RootStandardSchemaV1<unknown, T>;
+}
+
+const SimpleNewUser = rootStandard<{ name: string }>();
+const SimpleUser = rootStandard<{ id: string; name: string }>();
+const SimpleProblem = rootStandard<{ code: string }>();
+
+openmesh()
+  .use(bodyParser())
+  .post('/simple-users/:id', {
+    body: SimpleNewUser,
+    response: {
+      201: SimpleUser,
+      409: SimpleProblem
+    }
+  }, async ({ body, params, request, response }) => {
+    const name: string = body.name;
+    const id: string = params.id;
+    void request;
+    void response;
+    return rootCreated({ id, name });
+  });
+
+openmesh().post('/simple-conflict', {
+  body: SimpleNewUser,
+  response: {
+    201: SimpleUser,
+    409: SimpleProblem
+  }
+}, async ({ body }) => rootReply(409, { code: body.name }));
+
+openmesh().post('/simple-default-200', {
+  response: SimpleUser
+}, async () => ({ id: 'u-1', name: 'Sam' }));
+
+openmesh().post('/simple-wrong-status', {
+  // @ts-expect-error status 200 is not declared for this typed route
+  response: { 201: SimpleUser }
+}, async () => ({ id: 'u-1', name: 'Sam' }));
+
+openmesh().post('/simple-wrong-body', {
+  // @ts-expect-error id must be a string in the declared response
+  response: { 201: SimpleUser }
+}, async () => rootCreated({ id: 42, name: 'Sam' }));
+
+const meshed: MeshedOpenMesh = openmesh({
+  mesh: {
+    control: {
+      url: 'http://127.0.0.1:4000/_mesh',
+      token: 'mesh-control-token-value'
+    },
+    services: {
+      payments: {
+        traffic: {
+          split: [
+            { match: { version: 'v1' }, weight: 90 },
+            { match: { version: 'v2' }, weight: 10 }
+          ]
+        }
+      }
+    }
+  }
+});
+
+const typedPayments = meshed.mesh('payments');
+const paymentData: Promise<{ id: string }> = typedPayments.post<{ id: string }>('/charges', {
+  body: { amount: 10 },
+  key: 'user-1'
+});
+void paymentData;
+void typedPayments.get('/health', { target: { version: 'v2' } });
+
+// @ts-expect-error mesh is optional when OpenMesh is created without mesh configuration
+openmesh().mesh('payments');

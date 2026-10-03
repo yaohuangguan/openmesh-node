@@ -37,3 +37,34 @@ telemetry.onAppEvent({ type: 'server.closed', at: Date.now() });
 
 void serviceTesting.runRegistryAdapterConformance({ create: () => new services.ServiceRegistry({ sweepInterval: 0 }) });
 void serviceTesting.runConfigAdapterConformance({ create: () => new services.ConfigStore() });
+
+
+function cjsStandard<T>(): openmesh.StandardSchemaV1<unknown, T> {
+  return null as unknown as openmesh.StandardSchemaV1<unknown, T>;
+}
+
+const CjsNewUser = cjsStandard<{ name: string }>();
+const CjsUser = cjsStandard<{ id: string; name: string }>();
+
+openmesh()
+  .use(plugins.bodyParser())
+  .post('/typed/:id', {
+    body: CjsNewUser,
+    response: { 201: CjsUser }
+  }, async ({ body, params }) => {
+    const name: string = body.name;
+    const id: string = params.id;
+    return openmesh.created({ id, name });
+  });
+
+const cjsMeshed = openmesh({
+  mesh: {
+    control: {
+      url: 'http://127.0.0.1:4000/_mesh',
+      token: 'mesh-control-token-value'
+    }
+  }
+});
+
+const cjsPayments = cjsMeshed.mesh('payments');
+void cjsPayments.post<{ id: string }>('/charges', { body: { amount: 10 } });

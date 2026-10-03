@@ -2,11 +2,12 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import type { ServerResponse } from 'node:http';
 import { definePlugin } from '../core/app.js';
+import type { OpenMesh } from '../core/app.js';
 import type { Context } from '../core/context.js';
 import { HttpError } from '../core/context.js';
-import { jsonBody } from '../plugins/index.js';
-import { PeerPool } from '../mesh/index.js';
-import type { Peer, PeerOptions, PeerPoolOptions, PeerPoolStats, PeerResponse, PeerStats, PeerStreamOptions, PeerStreamResponse } from '../mesh/index.js';
+import { jsonBody, currentRequestContext } from '../plugins/index.js';
+import { PeerPool, PeerError, PeerResponse } from '../mesh/index.js';
+import type { Peer, PeerOptions, PeerPoolOptions, PeerPoolStats, PeerStats, PeerStreamOptions, PeerStreamResponse } from '../mesh/index.js';
 import {
   RegistryAdapter,
   ConfigAdapter,
@@ -1160,6 +1161,409 @@ export class ServicePool {
     this.client._servicePools.delete(this);
     this.watcher.stop();
     this.pool.close();
+  }
+}
+
+export type MeshMetadataValue = string | number | boolean;
+export type MeshMetadataMatch = Readonly<Record<string, MeshMetadataValue>>;
+
+export interface MeshTrafficTarget {
+  name?: string;
+  match: MeshMetadataMatch;
+  weight: number;
+}
+
+export interface MeshTrafficPolicy {
+  split: readonly MeshTrafficTarget[];
+  fallback?: 'all' | 'error';
+}
+
+export type MeshServiceOptions = ServicePoolOptions & {
+  traffic?: MeshTrafficPolicy;
+};
+
+export type MeshRawRequestOptions = PeerOptions & {
+  target?: MeshMetadataMatch;
+};
+
+export type MeshStreamRequestOptions = PeerStreamOptions & {
+  target?: MeshMetadataMatch;
+};
+
+export type MeshRequestOptions = Omit<MeshRawRequestOptions, 'method'>;
+export type MeshWriteOptions = MeshRequestOptions;
+
+export interface MeshRuntimeOptions {
+  control: ControlClient | {
+    url: string;
+    token: string;
+    timeout?: number;
+  };
+  defaults?: MeshServiceOptions;
+  services?: Readonly<Record<string, MeshServiceOptions>>;
+  closeControl?: boolean;
+}
+
+export class MeshHttpError extends Error {
+  readonly service: string;
+  readonly statusCode: number;
+  readonly peer: Peer;
+  readonly response: PeerResponse;
+  readonly data: unknown;
+
+  constructor(service: string, response: PeerResponse, data: unknown) {
+    super('Mesh request to ' + service + ' failed with HTTP ' + response.statusCode);
+    this.name = 'MeshHttpError';
+    this.service = service;
+    this.statusCode = response.statusCode;
+    this.peer = response.peer;
+    this.response = response;
+    this.data = data;
+  }
+}
+
+function validateMetadataMatch(match: MeshMetadataMatch, label: string): void {
+  if (!match || typeof match !== 'object' || Array.isArray(match)) {
+    throw new TypeError(label + ' must be an object');
+  }
+  if (!Object.keys(match).length) throw new TypeError(label + ' must contain at least one metadata key');
+  for (const [key, value] of Object.entries(match)) {
+    if (!key || !['string', 'number', 'boolean'].includes(typeof value)) {
+      throw new TypeError(label + ' values must be string, number or boolean');
+    }
+  }
+}
+
+function metadataMatches(metadata: Readonly<Record<string, unknown>>, match: MeshMetadataMatch): boolean {
+  for (const [key, value] of Object.entries(match)) {
+    if (metadata[key] !== value) return false;
+  }
+  return true;
+}
+
+function validateTrafficPolicy(policy: MeshTrafficPolicy | undefined): void {
+  if (policy === undefined) return;
+  if (!policy || typeof policy !== 'object' || !Array.isArray(policy.split) || !policy.split.length) {
+    throw new TypeError('Mesh traffic policy needs a nonempty split array');
+  }
+  if (policy.fallback !== undefined && !['all', 'error'].includes(policy.fallback)) {
+    throw new TypeError('Mesh traffic fallback must be all or error');
+  }
+
+  for (const target of policy.split) {
+    if (!target || typeof target !== 'object') throw new TypeError('Invalid mesh traffic target');
+    validateMetadataMatch(target.match, 'Mesh traffic target match');
+    if (!Number.isFinite(target.weight) || target.weight <= 0) {
+      throw new TypeError('Mesh traffic target weight must be positive');
+    }
+    if (target.name !== undefined && (typeof target.name !== 'string' || !target.name)) {
+      throw new TypeError('Mesh traffic target name must be nonempty');
+    }
+  }
+}
+
+function mergeMeshServiceOptions(
+  defaults: MeshServiceOptions | undefined,
+  configured: MeshServiceOptions | undefined,
+  local: MeshServiceOptions | undefined
+): MeshServiceOptions {
+  const merged: MeshServiceOptions = {
+    ...(defaults || {}),
+    ...(configured || {}),
+    ...(local || {})
+  };
+  if (defaults?.watch || configured?.watch || local?.watch) {
+    merged.watch = {
+      ...(defaults?.watch || {}),
+      ...(configured?.watch || {}),
+      ...(local?.watch || {})
+    };
+  }
+  validateTrafficPolicy(merged.traffic);
+  return merged;
+}
+
+function parseMeshResponse(response: PeerResponse): unknown {
+  if (response.statusCode === 204 || response.body.length === 0) return undefined;
+  const type = String(response.headers['content-type'] || '').toLowerCase();
+  if (type.includes('application/json') || type.includes('+json')) {
+    try { return response.json(); } catch {}
+  }
+  return response.text();
+}
+
+function stableBucket(value: string, modulo: number): number {
+  const digest = createHash('sha256').update(value).digest();
+  const high = digest.readUInt32BE(0);
+  return high % modulo;
+}
+
+export class MeshService {
+  readonly runtime: MeshRuntime;
+  readonly service: string;
+  readonly options: Readonly<MeshServiceOptions>;
+  private _poolPromise: Promise<ServicePool> | null = null;
+  private _closed = false;
+  private _counter = 0;
+
+  constructor(runtime: MeshRuntime, service: string, options: MeshServiceOptions = {}) {
+    this.runtime = runtime;
+    this.service = name(service);
+    validateTrafficPolicy(options.traffic);
+    this.options = Object.freeze({ ...options });
+  }
+
+  private _pool(): Promise<ServicePool> {
+    if (this._closed) return Promise.reject(new PeerError('Mesh service is closed', 'POOL_CLOSED'));
+    if (!this._poolPromise) {
+      const { traffic: _traffic, ...poolOptions } = this.options;
+      this._poolPromise = this.runtime.client.service(this.service, poolOptions).catch(error => {
+        this._poolPromise = null;
+        throw error;
+      });
+    }
+    return this._poolPromise;
+  }
+
+  private _selectTrafficMatch(options: MeshRawRequestOptions): MeshMetadataMatch | null {
+    if (options.target) {
+      validateMetadataMatch(options.target, 'Mesh request target');
+      return options.target;
+    }
+
+    const policy = this.options.traffic;
+    if (!policy) return null;
+
+    const total = policy.split.reduce((sum, target) => sum + target.weight, 0);
+    const scale = 1_000_000;
+    const normalizedWeights = policy.split.map(target => Math.max(1, Math.round(target.weight / total * scale)));
+    const normalizedTotal = normalizedWeights.reduce((sum, weight) => sum + weight, 0);
+    const bucket = options.key !== undefined
+      ? stableBucket(this.service + '\0' + options.key, normalizedTotal)
+      : stableBucket(this.service + '\0request\0' + this._counter++, normalizedTotal);
+
+    let cursor = 0;
+    for (let index = 0; index < policy.split.length; index++) {
+      cursor += normalizedWeights[index]!;
+      if (bucket < cursor) return policy.split[index]!.match;
+    }
+    return policy.split[policy.split.length - 1]!.match;
+  }
+
+  private _candidatePeerIds(pool: ServicePool, options: MeshRawRequestOptions): readonly string[] | undefined {
+    const match = this._selectTrafficMatch(options);
+    if (!match) return options.peerIds;
+
+    let ids = pool.watcher.instances
+      .filter(instance => metadataMatches(instance.metadata, match))
+      .map(instance => instance.id);
+
+    if (options.peerIds) {
+      const allowed = new Set(options.peerIds);
+      ids = ids.filter(id => allowed.has(id));
+    }
+
+    if (ids.length) return ids;
+    if (this.options.traffic?.fallback === 'all' && !options.target) return options.peerIds;
+
+    throw new PeerError(
+      'No instances of ' + this.service + ' match the requested traffic target',
+      'NO_TRAFFIC_TARGET'
+    );
+  }
+
+  private _requestOptions(pool: ServicePool, options: MeshRawRequestOptions, method: string): PeerOptions {
+    const state = currentRequestContext();
+    const headers = {
+      ...(state?.outboundHeaders || {}),
+      ...(options.headers || {})
+    };
+
+    const { target: _target, ...peerOptions } = options;
+    const peerIds = this._candidatePeerIds(pool, options);
+    return {
+      ...peerOptions,
+      method,
+      headers,
+      ...(peerIds ? { peerIds } : {})
+    };
+  }
+
+  async request(path: string, options: MeshRawRequestOptions = {}): Promise<PeerResponse> {
+    const pool = await this._pool();
+    return pool.request(path, this._requestOptions(pool, options, options.method || 'GET'));
+  }
+
+  async stream(path: string, options: MeshStreamRequestOptions = {}): Promise<PeerStreamResponse> {
+    const pool = await this._pool();
+    return pool.requestStream(
+      path,
+      this._requestOptions(pool, options, options.method || 'GET') as PeerStreamOptions
+    );
+  }
+
+  private async _data<T>(method: string, path: string, options: MeshRequestOptions = {}): Promise<T> {
+    const pool = await this._pool();
+    let response: PeerResponse;
+
+    try {
+      response = await pool.request(path, this._requestOptions(pool, options, method));
+    } catch (error) {
+      if (
+        error instanceof PeerError &&
+        error.code === 'REMOTE_HTTP_ERROR' &&
+        error.peer &&
+        error.response
+      ) {
+        const remote = new PeerResponse(error.peer, error.response);
+        throw new MeshHttpError(this.service, remote, parseMeshResponse(remote));
+      }
+      throw error;
+    }
+
+    const data = parseMeshResponse(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw new MeshHttpError(this.service, response, data);
+    }
+    return data as T;
+  }
+
+  get<T = unknown>(path: string, options: MeshRequestOptions = {}): Promise<T> {
+    return this._data<T>('GET', path, options);
+  }
+
+  head<T = unknown>(path: string, options: MeshRequestOptions = {}): Promise<T> {
+    return this._data<T>('HEAD', path, options);
+  }
+
+  post<T = unknown>(path: string, options: MeshWriteOptions = {}): Promise<T> {
+    return this._data<T>('POST', path, options);
+  }
+
+  put<T = unknown>(path: string, options: MeshWriteOptions = {}): Promise<T> {
+    return this._data<T>('PUT', path, options);
+  }
+
+  patch<T = unknown>(path: string, options: MeshWriteOptions = {}): Promise<T> {
+    return this._data<T>('PATCH', path, options);
+  }
+
+  delete<T = unknown>(path: string, options: MeshWriteOptions = {}): Promise<T> {
+    return this._data<T>('DELETE', path, options);
+  }
+
+  async stats(): Promise<PeerStats[]> {
+    return (await this._pool()).stats();
+  }
+
+  async poolStats(): Promise<PeerPoolStats> {
+    return (await this._pool()).poolStats();
+  }
+
+  close(): void {
+    if (this._closed) return;
+    this._closed = true;
+    const pending = this._poolPromise;
+    this._poolPromise = null;
+    if (pending) void pending.then(pool => pool.close(), () => {});
+  }
+}
+
+export class MeshRuntime {
+  readonly client: ControlClient;
+  private readonly _ownsClient: boolean;
+  private readonly _closeControl: boolean;
+  private readonly _defaults: MeshServiceOptions | undefined;
+  private readonly _configured: Readonly<Record<string, MeshServiceOptions>>;
+  private readonly _services = new Map<string, MeshService>();
+  private _closed = false;
+
+  constructor(options: MeshRuntimeOptions) {
+    if (!options || typeof options !== 'object' || !options.control) {
+      throw new TypeError('Mesh runtime needs a control plane');
+    }
+
+    if (options.control instanceof ControlClient) {
+      this.client = options.control;
+      this._ownsClient = false;
+    } else {
+      this.client = new ControlClient(options.control);
+      this._ownsClient = true;
+    }
+
+    this._closeControl = options.closeControl ?? this._ownsClient;
+    this._defaults = options.defaults;
+    this._configured = Object.freeze({ ...(options.services || {}) });
+
+    validateTrafficPolicy(this._defaults?.traffic);
+    for (const serviceOptions of Object.values(this._configured)) {
+      validateTrafficPolicy(serviceOptions.traffic);
+    }
+  }
+
+  service(service: string, options?: MeshServiceOptions): MeshService {
+    if (this._closed) throw new Error('Mesh runtime is closed');
+    const serviceName = name(service);
+    const existing = this._services.get(serviceName);
+    if (existing) {
+      if (options && Object.keys(options).length) {
+        throw new Error('Mesh service ' + serviceName + ' is already configured');
+      }
+      return existing;
+    }
+
+    const resolved = mergeMeshServiceOptions(
+      this._defaults,
+      this._configured[serviceName],
+      options
+    );
+    const serviceClient = new MeshService(this, serviceName, resolved);
+    this._services.set(serviceName, serviceClient);
+    return serviceClient;
+  }
+
+  close(): Promise<void> {
+    if (this._closed) return Promise.resolve();
+    this._closed = true;
+    for (const service of this._services.values()) service.close();
+    this._services.clear();
+    return this._closeControl ? this.client.close() : Promise.resolve();
+  }
+}
+
+export type MeshAccessor = ((service: string, options?: MeshServiceOptions) => MeshService) & {
+  readonly runtime: MeshRuntime;
+  close(): Promise<void>;
+};
+
+export function createMeshRuntime(options: MeshRuntimeOptions): MeshRuntime {
+  return new MeshRuntime(options);
+}
+
+export function attachMeshRuntime(app: OpenMesh, options: MeshRuntimeOptions): MeshAccessor {
+  const runtime = new MeshRuntime(options);
+  const accessor = ((service: string, serviceOptions?: MeshServiceOptions) =>
+    runtime.service(service, serviceOptions)) as MeshAccessor;
+
+  Object.defineProperties(accessor, {
+    runtime: { value: runtime, enumerable: true },
+    close: { value: () => runtime.close(), enumerable: true }
+  });
+
+  app.decorate('mesh', accessor);
+  app.onClose(() => runtime.close());
+  return accessor;
+}
+
+export function meshRuntime(options: MeshRuntimeOptions): ReturnType<typeof definePlugin> {
+  return definePlugin(app => {
+    attachMeshRuntime(app, options);
+  }, { name: 'mesh-runtime', global: true });
+}
+
+declare module '../core/app.js' {
+  interface OpenMesh {
+    mesh?: MeshAccessor;
   }
 }
 

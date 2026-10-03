@@ -1,8 +1,8 @@
 # OpenMesh for Node.js
 
-**A service runtime for Node.js — not another web framework.**
+**Start as an API. Grow into a mesh.**
 
-Build services that can **discover, route, stream, backpressure, reconfigure, and observe each other** from application code, without turning the request path into a dependency-heavy platform.
+OpenMesh is a TypeScript-first Node.js runtime for building ordinary HTTP APIs that can grow into an **application-native service mesh**: discovery, routing, backpressure, retries, circuits, streaming, traffic policy, live configuration, and observability stay inside the runtime instead of requiring a sidecar on every service.
 
 [![npm](https://img.shields.io/npm/v/openmesh-node?label=npm)](https://www.npmjs.com/package/openmesh-node)
 [![CI](https://github.com/yaohuangguan/openmesh-node/actions/workflows/ci.yml/badge.svg)](https://github.com/yaohuangguan/openmesh-node/actions/workflows/ci.yml)
@@ -13,11 +13,78 @@ Build services that can **discover, route, stream, backpressure, reconfigure, an
 npm install openmesh-node
 ```
 
-**v0.4.0 is live on npm.** OpenMesh is TypeScript-first, ships ESM + CommonJS + declarations, and keeps the native HTTP core at **zero runtime dependencies**.
+**v0.4.0 is live on npm.** It ships ESM + CommonJS + declarations and keeps the native HTTP core at **zero runtime dependencies**.
+
+**v0.5 is currently a preview branch.** The new developer surface is intentionally smaller: typed `app.get/post/...` for normal APIs, then `app.mesh('service')` when the application grows. See [Application-native Mesh](docs/mesh-runtime.md) and [Advanced HTTP Contracts](docs/functional-http.md).
 
 [Get started](#start-in-30-seconds) · [Why OpenMesh](#why-openmesh) · [Architecture](#architecture) · [Microservices](docs/services.md) · [Peer routing](docs/distributed.md) · [Observability](docs/observability.md) · [Performance](docs/performance.md) · [API](docs/api.md)
 
 ---
+
+## 0.5 preview: from API to mesh
+
+Normal API development stays small:
+
+```ts
+import openmesh, { created } from 'openmesh-node';
+import { bodyParser } from 'openmesh-node/plugins';
+
+const app = openmesh();
+app.use(bodyParser());
+
+app.post('/users/:id', {
+  body: NewUser,
+  response: {
+    201: User,
+    409: Problem
+  }
+}, async ({ body, params }) => {
+  return created(await users.create({
+    id: params.id,
+    ...body
+  }));
+});
+```
+
+When that application splits into services, the programming model grows instead of changing:
+
+```ts
+const app = openmesh({
+  service: 'gateway',
+
+  mesh: {
+    control: {
+      url: process.env.OPENMESH_CONTROL_URL,
+      token: process.env.OPENMESH_TOKEN
+    },
+
+    services: {
+      payments: {
+        traffic: {
+          split: [
+            { match: { version: 'v1' }, weight: 90 },
+            { match: { version: 'v2' }, weight: 10 }
+          ]
+        }
+      }
+    }
+  }
+});
+
+const payments = app.mesh('payments');
+
+const charge = await payments.post('/charges', {
+  key: user.id,
+  body: {
+    userId: user.id,
+    amount: order.total
+  }
+});
+```
+
+That call reuses OpenMesh's existing discovery watch, per-service bulkhead, deadlines, retry policy, circuit state, peer routing, tracing, and metrics. There is no sidecar hop.
+
+The 0.5 preview does **not** yet provide workload identity or automatic service-to-service mTLS, so it should not be described as a drop-in Istio/Linkerd replacement.
 
 ## Why OpenMesh
 
@@ -312,9 +379,10 @@ Those integrations are optional. The native request path does not require them.
 
 | Import | Purpose |
 | --- | --- |
-| `openmesh-node` | HTTP runtime |
-| `openmesh-node/plugins` | Native plugins |
-| `openmesh-node/mesh` | Peer routing / client data plane |
+| `openmesh-node` | Typed HTTP runtime + `app.mesh()` facade |
+| `openmesh-node/plugins` | Native plugins and body parsers |
+| `openmesh-node/http` | Advanced functional contract API (0.5 preview) |
+| `openmesh-node/mesh` | Low-level peer routing / client data plane |
 | `openmesh-node/services` | Registration, discovery, config, control plane |
 | `openmesh-node/services/redis` | Durable Redis adapters |
 | `openmesh-node/services/testing` | Adapter conformance harness |
@@ -392,7 +460,7 @@ CI covers Node 22/24 on Linux and Windows, real Redis integration, packed-packag
 
 ## Documentation
 
-[API](docs/api.md) · [Services & control plane](docs/services.md) · [Peer routing](docs/distributed.md) · [0.4 architecture](docs/architecture-0.4.md) · [Observability](docs/observability.md) · [Plugins](docs/plugins.md) · [Performance](docs/performance.md) · [Releasing](docs/releasing.md) · [Changelog](CHANGELOG.md)
+[Application-native Mesh](docs/mesh-runtime.md) · [API](docs/api.md) · [Advanced HTTP Contracts](docs/functional-http.md) · [Services & control plane](docs/services.md) · [Peer routing](docs/distributed.md) · [0.4 architecture](docs/architecture-0.4.md) · [Observability](docs/observability.md) · [Plugins](docs/plugins.md) · [Performance](docs/performance.md) · [Releasing](docs/releasing.md) · [Changelog](CHANGELOG.md)
 
 ## Contributing
 

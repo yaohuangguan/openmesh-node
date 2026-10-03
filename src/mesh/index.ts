@@ -50,6 +50,7 @@ export interface PeerOptions {
   retries?: number;
   retryUnsafe?: boolean;
   idempotencyKey?: string;
+  peerIds?: readonly string[];
 }
 
 export interface PeerStreamOptions extends PeerOptions {
@@ -144,13 +145,19 @@ export class PeerError extends Error {
   code: string;
   peer?: Peer;
   statusCode?: number;
+  response?: TransportResponse;
 
-  constructor(message: string, code: string, options: ErrorOptions & { peer?: Peer; statusCode?: number } = {}) {
+  constructor(message: string, code: string, options: ErrorOptions & {
+    peer?: Peer;
+    statusCode?: number;
+    response?: TransportResponse;
+  } = {}) {
     super(message, options);
     this.name = 'PeerError';
     this.code = code;
     if (options.peer) this.peer = options.peer;
     if (options.statusCode) this.statusCode = options.statusCode;
+    if (options.response) this.response = options.response;
   }
 }
 
@@ -402,8 +409,14 @@ export class PeerPool {
     return leftLatency - rightLatency;
   }
 
-  private _candidates(key?: string): Peer[] {
-    const ranked = this.rank(key ?? String(this._counter++));
+  private _candidates(key?: string, peerIds?: readonly string[]): Peer[] {
+    let ranked = this.rank(key ?? String(this._counter++));
+
+    if (peerIds) {
+      const allowed = new Set(peerIds);
+      ranked = ranked.filter(peer => allowed.has(peer.id));
+    }
+
     if (key !== undefined || this.selection === 'rendezvous' || ranked.length < 2) return ranked;
 
     if (this._compareLoad(ranked[1]!, ranked[0]!, Date.now()) < 0) {
@@ -618,7 +631,19 @@ export class PeerPool {
     if (options.idempotencyKey) headers['idempotency-key'] = options.idempotencyKey;
 
     const attempts = SAFE_METHODS.has(method) || options.retryUnsafe ? retries + 1 : 1;
-    const candidates = onlyPeer ? [onlyPeer] : this._candidates(options.key);
+
+    if (
+      options.peerIds !== undefined &&
+      (
+        !Array.isArray(options.peerIds) ||
+        !options.peerIds.length ||
+        options.peerIds.some(id => typeof id !== 'string' || !id)
+      )
+    ) {
+      throw new TypeError('peerIds must be a nonempty array of peer ids');
+    }
+
+    const candidates = onlyPeer ? [onlyPeer] : this._candidates(options.key, options.peerIds);
     if (!candidates.length) throw new PeerError('No peers available', 'NO_PEERS');
     for (const peer of candidates) targetURL(peer, path);
 
@@ -748,7 +773,11 @@ export class PeerPool {
             signal
           );
           if (response.statusCode >= 500) {
-            throw new PeerError('Peer returned HTTP ' + response.statusCode, 'REMOTE_HTTP_ERROR', { peer, statusCode: response.statusCode });
+            throw new PeerError('Peer returned HTTP ' + response.statusCode, 'REMOTE_HTTP_ERROR', {
+              peer,
+              statusCode: response.statusCode,
+              response
+            });
           }
           const latencyMs = performance.now() - started;
           this._success(state, latencyMs);

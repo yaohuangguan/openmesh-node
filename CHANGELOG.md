@@ -2,12 +2,16 @@
 
 ## 0.5.0 (unreleased)
 
-- Add a preview functional HTTP API under `openmesh-node/http`: immutable route contracts, `pipe()`, Standard Schema input/output inference, typed reply values, and contract-first `implement()`.
-- Keep route typing local instead of accumulating one whole-application generic; `api()` preserves route values for future typed-client/OpenAPI tooling.
-- Add typed implementation providers so authentication/tenancy/request-scoped dependencies flow into handlers without `ctx.state` casts.
+- Add the application-native mesh facade: configure `openmesh({ service, mesh })`, get lazy service handles with `app.mesh(name)`, and keep the existing `ControlClient` / `ServicePool` / `PeerPool` machinery underneath.
+- Add mesh HTTP helpers (`get/post/put/patch/delete`) that return parsed successful payloads, preserve raw/streaming escape hatches, propagate request-id/trace context automatically, and expose final remote failures as `MeshHttpError`.
+- Add metadata-based traffic targeting and weighted service subsets for canary/version/region routing. Request keys keep subset selection sticky; explicit targets fail closed when no instance matches.
+- Add per-request peer filtering to `PeerPool` so retries and circuits stay inside the selected traffic subset.
+- Add simple typed route shorthand directly on `app.get/post/...`: Standard Schema body/params/query/headers inference plus compile-time and runtime response status/body contracts without requiring a custom validator compiler.
 - Add complete HTTP lifecycle hooks: `onRequest`, `preParsing`, `preValidation`, `preHandler`, `postHandler`, `preSerialization`, `preSend`, `onResponse`, and `onError`, with plugin-scope and route-level composition.
+- Split response preparation from socket writes so `preSerialization` sees the semantic body while `preSend` sees the final serialized string/bytes/stream.
 - Expand body parsing plugins with universal `bodyParser()` plus JSON, text, raw, URL-encoded form, and buffered multipart parsers with explicit size limits.
-- Add functional CRUD/runtime tests, lifecycle-order tests, TypeScript negative tests for response contracts, and packed-package coverage for `openmesh-node/http`.
+- Keep `openmesh-node/http` as an optional advanced contract API: immutable route values, `pipe()`, typed derivation, and contract-first `implement()` for tooling-heavy use cases rather than the default CRUD learning path.
+- Add real multi-service mesh tests, typed CRUD tests, lifecycle-order tests, TypeScript negative tests, and packed-package coverage for the new public surfaces.
 
 ## 0.4.0 - 2026-10-03
 

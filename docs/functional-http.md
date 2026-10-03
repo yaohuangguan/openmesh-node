@@ -1,23 +1,33 @@
-# Functional HTTP — 0.5 preview
+# Advanced HTTP Contracts — 0.5 preview
 
-> **Routes are values. Contract first, function second.**
+> **Optional advanced API: routes are values.**
 
-OpenMesh 0.5 introduces a function-first HTTP programming model for normal API development without giving up the distributed runtime that ships with OpenMesh.
-
-The goal is not to add a second controller framework on top of the runtime. The goal is to make an HTTP endpoint an immutable, typed value that can later be implemented, grouped, tested, documented, called, or compiled into the OpenMesh runtime.
-
-## The idea
-
-Traditional Node APIs commonly make the handler the center of the programming model:
+The default OpenMesh 0.5 API is intentionally simpler:
 
 ```ts
-app.post('/users', async ctx => {
-  ctx.status = 201;
-  ctx.body = await users.create(ctx.requestBody);
+app.post('/users/:id', {
+  body: NewUser,
+  response: {
+    201: User,
+    409: Problem
+  }
+}, async ({ body, params }) => {
+  return created(await users.create({
+    id: params.id,
+    ...body
+  }));
 });
 ```
 
-The functional API separates **contract** from **implementation**.
+For most API and CRUD work, start there.
+
+The `openmesh-node/http` functional layer is an **advanced contract API** for teams that want route contracts as first-class immutable values for tooling, client generation, testing, or policy inspection.
+
+It is not the primary learning path and it is not required to use `app.mesh()`.
+
+## The advanced idea
+
+A route contract can be separated from its implementation.
 
 ```ts
 import {

@@ -77,10 +77,24 @@ try {
     if (packageJson.version !== ${JSON.stringify(pkg.version)}) {
       throw new Error('Installed package version mismatch: ' + packageJson.version);
     }
-    const app = require('openmesh-node')();
+    const openmesh = require('openmesh-node');
+    const app = openmesh();
     if (app.version !== packageJson.version) {
       throw new Error('Runtime version mismatch: ' + app.version + ' != ' + packageJson.version);
     }
+    const meshed = openmesh({
+      service: 'package-smoke',
+      mesh: {
+        control: {
+          url: 'http://127.0.0.1:1/_mesh',
+          token: 'package-smoke-token-value'
+        }
+      }
+    });
+    if (typeof meshed.mesh !== 'function') throw new Error('CJS app.mesh facade missing');
+    if (meshed.mesh('users').service !== 'users') throw new Error('CJS mesh service handle mismatch');
+    if (typeof openmesh.created !== 'function') throw new Error('CJS root reply helpers missing');
+    void meshed.mesh.close();
   `;
   run(node, ['-e', cjs], { cwd: temp });
 
@@ -94,6 +108,20 @@ try {
     if (packageJson.default.version !== ${JSON.stringify(pkg.version)}) {
       throw new Error('Installed package version mismatch: ' + packageJson.default.version);
     }
+    const root = await import('openmesh-node');
+    const meshed = root.default({
+      service: 'package-smoke',
+      mesh: {
+        control: {
+          url: 'http://127.0.0.1:1/_mesh',
+          token: 'package-smoke-token-value'
+        }
+      }
+    });
+    if (typeof meshed.mesh !== 'function') throw new Error('ESM app.mesh facade missing');
+    if (meshed.mesh('users').service !== 'users') throw new Error('ESM mesh service handle mismatch');
+    if (typeof root.created !== 'function') throw new Error('ESM root reply helpers missing');
+    await meshed.mesh.close();
   `;
   run(node, ['--input-type=module', '-e', esm], { cwd: temp });
 
