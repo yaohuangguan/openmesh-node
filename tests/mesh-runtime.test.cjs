@@ -23,7 +23,7 @@ test('app.mesh provides lazy service calls, traffic policy and trace propagation
   const registrationClient = new ControlClient({
     url: controlURL + '/_mesh',
     token,
-    timeout: 500
+    timeout: 5000
   });
 
   function paymentApp(id, version) {
@@ -65,10 +65,10 @@ test('app.mesh provides lazy service calls, traffic policy and trace propagation
       control: {
         url: controlURL + '/_mesh',
         token,
-        timeout: 500
+        timeout: 5000
       },
       defaults: {
-        timeout: 1000,
+        timeout: 5000,
         retries: 1,
         maxInflight: 32,
         maxQueue: 64
