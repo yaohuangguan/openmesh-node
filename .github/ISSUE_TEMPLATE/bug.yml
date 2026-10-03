@@ -1,20 +1,69 @@
 name: Bug report
-description: Report a reproducible problem
+description: Report a reproducible OpenMesh problem
+title: "[bug] "
+labels: ["bug"]
 body:
-  - type: textarea
+  - type: markdown
     attributes:
-      label: Reproduction
-      description: Minimal runnable code and exact commands
-    validations:
-      required: true
-  - type: textarea
-    attributes:
-      label: Expected and actual behavior
-    validations:
-      required: true
+      value: |
+        Thanks for reporting a concrete failure. Minimal reproductions are much more useful than screenshots alone.
+
   - type: input
+    id: version
+    attributes:
+      label: OpenMesh version
+      placeholder: 0.4.0
+    validations:
+      required: true
+
+  - type: input
+    id: environment
     attributes:
       label: Environment
-      placeholder: OpenMesh version, Node version, operating system
+      placeholder: Node 24.18.0, macOS 15 / Ubuntu 24.04 / Windows 11
     validations:
       required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - HTTP runtime
+        - PeerPool / routing
+        - Service discovery / ServicePool
+        - Control plane / config
+        - Redis adapter
+        - Streaming
+        - Observability / OTel
+        - Package / ESM / CommonJS
+        - CI / benchmark
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include runnable code and exact commands. Remove credentials and private URLs.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected vs actual behavior
+      placeholder: |
+        Expected:
+        Actual:
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or error output
+      description: Please redact tokens, cookies, credentials, and private service addresses.
+      render: text

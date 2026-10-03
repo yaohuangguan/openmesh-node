@@ -1,0 +1,45 @@
+name: Feature / design proposal
+description: Propose a concrete runtime capability or behavior change
+title: "[proposal] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        OpenMesh prefers small primitives with explicit failure semantics over broad feature requests.
+
+  - type: textarea
+    id: workload
+    attributes:
+      label: Concrete workload
+      description: What real service behavior or failure mode are you trying to handle?
+    validations:
+      required: true
+
+  - type: textarea
+    id: limitation
+    attributes:
+      label: Current limitation
+      description: What cannot be expressed cleanly with the current API?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Focus on semantics and boundaries before implementation details.
+    validations:
+      required: true
+
+  - type: textarea
+    id: failure
+    attributes:
+      label: Failure / overload / shutdown semantics
+      description: What should happen on timeout, cancellation, retry, partial success, overload, or shutdown?
+
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility considerations
+      description: Does this affect the native request path, protocol, package exports, or pre-1.0 API compatibility?

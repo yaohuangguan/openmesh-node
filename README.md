@@ -1,125 +1,342 @@
 # OpenMesh for Node.js
 
-**Small core. Connected services.**
+**A service runtime for Node.js — not another web framework.**
 
+Build services that can **discover, route, stream, backpressure, reconfigure, and observe each other** from application code, without turning the request path into a dependency-heavy platform.
+
+[![npm](https://img.shields.io/npm/v/openmesh-node?label=npm)](https://www.npmjs.com/package/openmesh-node)
 [![CI](https://github.com/yaohuangguan/openmesh-node/actions/workflows/ci.yml/badge.svg)](https://github.com/yaohuangguan/openmesh-node/actions/workflows/ci.yml)
-![Node](https://img.shields.io/badge/node-%E2%89%A522-green)
-![License](https://img.shields.io/badge/license-MIT-blue)
-
-[API](docs/api.md) · [Microservices](docs/services.md) · [0.4 architecture](docs/architecture-0.4.md) · [0.3 architecture](docs/architecture-0.3.md) · [Plugins](docs/plugins.md) · [Peer routing](docs/distributed.md) · [Performance](docs/performance.md) · [Go experiment](docs/native-engine.md)
-
-A TypeScript-first Node.js service runtime with onion middleware, real Express/Fastify bridges, peer routing, registration, discovery, and live configuration. The native Node core has **zero runtime dependencies**; the package is built from one strict TypeScript source tree into ESM, CommonJS, and generated declarations.
-
-Version **0.4.0 is pre-1.0**: the public API is usable, but compatibility can still evolve between minor releases. Performance is tracked through normalized regression budgets against a same-run baseline rather than unsupported \"fastest framework\" claims. This project is independent of Openmesh Network; its package name is `openmesh-node`.
-
-## What is included
-
-- Native HTTP routing, async handlers, streams, scoped plugins, route-schema compiler hooks, and graceful shutdown.
-- Node/Express middleware and complete Express application mounts.
-- Fastify plugins inside an actual, optionally installed Fastify 5 instance.
-- HTTP peer routing with keyed rendezvous affinity, load-aware P2C selection, bounded admission/backpressure, streaming responses, deadlines, retries, circuits, and bounded broadcasts.
-- Authenticated control-plane API with protocol/capability discovery, expiring registration leases, automatic heartbeats, and pre-drain deregistration.
-- Pluggable registry/config adapters with in-memory defaults, async adapter support, and durable Redis adapters with atomic lease/CAS transitions.
-- Push-based SSE/PubSub watches for service membership and configuration, with polling/TTL-expiry compatibility.
-- Managed per-service pools that combine discovery watches with isolated concurrency/queue/circuit state; deregistration when services shut down.
-- Immutable live configuration, validation, and epoch/revision compare-and-swap.
-- Request IDs, `traceparent` propagation, health endpoints, AsyncLocalStorage request context, exporter-neutral lifecycle events, and an optional OpenTelemetry-compatible metrics bridge.
-- Scoped control-plane credentials with action and resource boundaries, optional adaptive concurrency with hard ceilings, plus normalized benchmark-regression budgets in CI.
-- TypeScript-first source with generated ESM/CommonJS builds and generated public declarations.
-
-The default control-plane stores are in-memory and are best suited to local clusters, integration testing, and early deployments. For durable single-Redis-backed deployments, use `openmesh-node/services/redis`; the adapter boundary also supports other external stores. OpenMesh does not claim to provide replicated consensus by itself. P2P means known HTTP nodes; NAT traversal and DHT are not implemented.
-
-## Start a service
-
-Requires Node.js 22+. Install from npm:
+[![Node](https://img.shields.io/badge/Node.js-%E2%89%A522-43853d)](https://nodejs.org/)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 ```sh
 npm install openmesh-node
 ```
 
-Save as `server.mjs`:
+**v0.4.0 is live on npm.** OpenMesh is TypeScript-first, ships ESM + CommonJS + declarations, and keeps the native HTTP core at **zero runtime dependencies**.
+
+[Get started](#start-in-30-seconds) · [Why OpenMesh](#why-openmesh) · [Architecture](#architecture) · [Microservices](docs/services.md) · [Peer routing](docs/distributed.md) · [Observability](docs/observability.md) · [Performance](docs/performance.md) · [API](docs/api.md)
+
+---
+
+## Why OpenMesh
+
+Most Node.js HTTP libraries stop at the server boundary. OpenMesh keeps going.
+
+| Problem | OpenMesh primitive |
+| --- | --- |
+| How do I call healthy service instances? | Discovery-backed `ServicePool` |
+| What happens when downstream is overloaded? | Bounded admission, queues, bulkheads, adaptive concurrency |
+| How do I fail over without replaying unsafe work? | Deadlines, retry policy, circuit breaking, idempotency-aware rules |
+| How do long-lived responses behave? | True streaming with explicit post-header no-replay semantics |
+| How does topology update without restarts? | Registration leases + push watches |
+| How do I change config safely at runtime? | Immutable snapshots + revision/epoch CAS |
+| How do I persist the control plane? | Durable Redis adapters |
+| How do I limit control-plane access? | Scoped credentials + service/namespace boundaries |
+| How do I export telemetry? | Request/server/peer lifecycle events + OpenTelemetry-compatible metrics bridge |
+
+The goal is a small runtime with clear failure semantics—not a hidden cluster platform.
+
+## Architecture
+
+```text
+                         ┌──────────────────────────┐
+                         │      Control Plane       │
+                         │ registration • config    │
+                         │ scopes • watches • CAS   │
+                         └────────────┬─────────────┘
+                                      │
+                               in-memory / Redis
+                                      │
+                                      ▼
+┌──────────────┐      ┌───────────────────────────────┐
+│ Your service │ ───▶ │       OpenMesh runtime        │
+│ routes/hooks │      │                               │
+└──────────────┘      │ ServicePool                   │
+                      │   └─ discovery watch          │
+                      │   └─ per-service bulkhead     │
+                      │   └─ adaptive concurrency     │
+                      │                               │
+                      │ PeerPool                      │
+                      │   └─ P2C / rendezvous         │
+                      │   └─ queue / deadline         │
+                      │   └─ retry / circuit          │
+                      │   └─ buffered / streaming     │
+                      └───────────────┬───────────────┘
+                                      │ HTTP
+                        ┌─────────────┼─────────────┐
+                        ▼             ▼             ▼
+                     service-a     service-b     service-c
+```
+
+No sidecar is required. No Go process sits in the request path. Redis, OpenTelemetry, Express, and Fastify integrations are optional boundaries, not core runtime dependencies.
+
+## Start in 30 seconds
+
+Requires Node.js 22+.
 
 ```js
 import openmesh from 'openmesh-node';
 import { jsonBody } from 'openmesh-node/plugins';
 
 const app = openmesh();
+
 app.use(jsonBody());
+
 app.get('/', () => ({ hello: 'OpenMesh' }));
 app.get('/users/:id', ctx => ({ id: ctx.params.id }));
 app.post('/echo', ctx => ctx.requestBody);
 
 await app.listen({ port: 3000 });
+
 process.once('SIGTERM', () => app.close());
 process.once('SIGINT', () => app.close());
 ```
 
-Run `node server.mjs`. Default bind address: `127.0.0.1`; use an explicit host for containers. CommonJS: `const openmesh = require('openmesh-node');`.
+Run:
 
-## Registration and discovery
+```sh
+node server.mjs
+```
 
-Start a control-plane service:
+CommonJS is supported too:
+
+```js
+const openmesh = require('openmesh-node');
+```
+
+## Connect services
+
+OpenMesh can own service registration, discovery, routing, and per-service pressure isolation.
+
+Start a control plane:
 
 ```js
 import openmesh from 'openmesh-node';
 import { controlPlane } from 'openmesh-node/services';
 
 const control = openmesh();
-control.register(controlPlane({ token: process.env.OPENMESH_TOKEN }));
+
+control.register(controlPlane({
+  token: process.env.OPENMESH_TOKEN
+}));
+
 await control.listen({ port: 4000 });
 ```
 
-Register a service after its listener binds:
+Register a service:
 
 ```js
-import { ControlClient, serviceRegistration } from 'openmesh-node/services';
+import {
+  ControlClient,
+  serviceRegistration
+} from 'openmesh-node/services';
 
 const client = new ControlClient({
   url: 'http://127.0.0.1:4000/_mesh',
   token: process.env.OPENMESH_TOKEN
 });
+
 app.onClose(() => client.close());
+
 app.register(serviceRegistration({
-  client, service: 'users', id: 'users-a', ttl: 30000,
+  client,
+  service: 'users',
+  id: 'users-a',
+  ttl: 30_000,
   url: address => 'http://127.0.0.1:' + address.port
 }));
 ```
 
-Configure before `app.listen()`. Set a token of at least 16 characters. For production least privilege, `controlPlane({ credentials: [...] })` can restrict tokens to `meta:read`, service read/write, or config read/write scopes and to exact service/namespace names; the simple `token` option remains full access. Advertise an address reachable by callers; a container's loopback is usually only reachable inside that container. Registration is awaited before `listen()` resolves, renews in the background, and is removed on shutdown.
+Then call the service through a managed pool:
 
 ```js
 const users = await client.service('users', {
   maxInflight: 64,
-  maxQueue: 128
+  maxQueue: 128,
+  adaptiveConcurrency: true
 });
-const response = await users.request('/users/42', { key: '42' });
+
+const response = await users.request('/users/42', {
+  key: '42'
+});
+
 console.log(response.peer.id, response.json());
-app.onClose(() => users.close());
 ```
 
-The managed service pool follows discovery automatically and isolates its concurrency/queue/circuit state from other services. Use `PeerPool` directly when membership comes from another registry or when no control plane is involved. POST/PATCH do not retry by default. [Exact retry and discovery semantics](docs/distributed.md).
+Membership changes are followed automatically. Each service gets isolated queue, concurrency, circuit, and adaptive state.
+
+## Streaming that knows when a response is committed
+
+```js
+const stream = await users.requestStream('/events', {
+  timeout: 5_000,
+  idleTimeout: 30_000
+});
+
+stream.body.pipe(process.stdout);
+```
+
+For streaming calls, the normal timeout covers admission + response headers. After non-5xx headers are handed to the caller, OpenMesh treats the response as committed and will **not replay it on another peer** if the body later fails.
+
+That behavior matters for SSE, LLM responses, large downloads, and any operation where invisible retries would be dangerous.
+
+## Durable Redis control plane
+
+The default registry/config stores are in-memory. For durable deployments, use the Redis adapters:
+
+```js
+import { createClient } from 'redis';
+import {
+  RedisRegistryAdapter,
+  RedisConfigAdapter
+} from 'openmesh-node/services/redis';
+
+const redis = createClient({
+  url: process.env.REDIS_URL
+});
+
+await redis.connect();
+
+control.register(controlPlane({
+  credentials,
+  registry: new RedisRegistryAdapter({
+    client: redis,
+    prefix: 'openmesh-prod'
+  }),
+  config: new RedisConfigAdapter({
+    client: redis,
+    prefix: 'openmesh-prod'
+  })
+}));
+```
+
+Lease ownership, renewal, deregistration, configuration CAS, and revision updates use Redis-side atomic transitions. Registry watches combine Pub/Sub with TTL-expiry detection, so Redis keyspace notifications are not required.
+
+[Redis adapter details](docs/services.md#redis-durable-adapters)
+
+## Least-privilege control plane
+
+Simple deployments can use one token. Larger deployments can scope credentials by action and resource.
+
+```js
+control.register(controlPlane({
+  credentials: [
+    {
+      token: process.env.DISCOVERY_TOKEN,
+      scopes: ['meta:read', 'services:read'],
+      services: ['users', 'payments']
+    },
+    {
+      token: process.env.CONFIG_TOKEN,
+      scopes: ['config:read', 'config:write'],
+      namespaces: ['users']
+    }
+  ]
+}));
+```
+
+A valid credential without the required scope or resource grant receives `403`; an unknown credential receives `401`.
 
 ## Live configuration
 
 ```js
 const current = await client.getConfig('users');
-await client.setConfig('users', { greeting: 'Hello' }, {
-  expectedRevision: current.revision,
-  expectedEpoch: current.epoch
-});
+
+await client.setConfig(
+  'users',
+  { greeting: 'Hello' },
+  {
+    expectedRevision: current.revision,
+    expectedEpoch: current.epoch
+  }
+);
 
 const config = await client.watchConfig('users', {
   validate(values) {
-    if (typeof values.greeting !== 'string') throw new Error('greeting must be a string');
-  },
-  onUpdate(snapshot) { console.log('Configuration revision:', snapshot.revision); }
+    if (typeof values.greeting !== 'string') {
+      throw new Error('greeting must be a string');
+    }
+  }
 });
-console.log(config.get('greeting'));
 ```
 
-Updates replace the whole namespace and reject stale writes. Invalid or unavailable updates preserve the last accepted snapshot. [API and operational limits](docs/services.md).
+Updates replace the whole namespace and reject stale writes. Invalid or unavailable updates preserve the last accepted snapshot.
 
-## Try the complete microservice flow
+## Observability without coupling the core to an SDK
+
+OpenMesh emits exporter-neutral lifecycle events only when observers are enabled.
+
+```js
+import { metrics } from '@opentelemetry/api';
+import { createOpenTelemetryObservers } from 'openmesh-node/otel';
+
+const telemetry = createOpenTelemetryObservers({
+  meter: metrics.getMeter('users-service'),
+  attributes: {
+    service: 'users',
+    region: 'nz'
+  }
+});
+
+const app = openmesh({
+  onEvent: telemetry.onAppEvent
+});
+```
+
+The bridge records bounded, low-cardinality request/peer/admission/concurrency metrics and does not emit raw request paths, peer URLs, bodies, headers, config values, or tokens.
+
+[Observability details](docs/observability.md)
+
+## Use the ecosystem you already have
+
+OpenMesh can host existing Express/Fastify components without pretending they are native OpenMesh middleware.
+
+```js
+app.useExpress(cors());
+
+app.mount('/legacy', expressApp);
+
+app.fastify('/validated', async host => {
+  host.get('/hello', async () => ({
+    engine: 'fastify'
+  }));
+});
+```
+
+Those integrations are optional. The native request path does not require them.
+
+[Compatibility guide](docs/plugins.md)
+
+## Public package surface
+
+| Import | Purpose |
+| --- | --- |
+| `openmesh-node` | HTTP runtime |
+| `openmesh-node/plugins` | Native plugins |
+| `openmesh-node/mesh` | Peer routing / client data plane |
+| `openmesh-node/services` | Registration, discovery, config, control plane |
+| `openmesh-node/services/redis` | Durable Redis adapters |
+| `openmesh-node/services/testing` | Adapter conformance harness |
+| `openmesh-node/otel` | OpenTelemetry-compatible metrics bridge |
+
+Every published subpath is exercised through real packed-tarball CJS + ESM smoke tests in CI.
+
+## Performance discipline
+
+OpenMesh does not market itself as “the fastest Node.js framework.”
+
+The recorded 0.4.0 release benchmark uses the same machine, workload, warmup, process isolation, and load generator for both OpenMesh and the comparison baseline. Across five small loopback workloads, the geometric-mean normalized throughput ratio was **98.0%**, with **0 request errors, timeouts, or non-2xx responses across 30 recorded runs**.
+
+The benchmark exists to answer a more useful question:
+
+> Did the runtime features make the native request path materially worse?
+
+CI enforces normalized regression budgets on every change.
+
+[Method, raw rounds, limits, and reproducibility](docs/performance.md)
+
+## Run the complete microservice demo
 
 ```sh
 git clone https://github.com/yaohuangguan/openmesh-node.git
@@ -128,29 +345,61 @@ npm ci --ignore-scripts
 npm run demo:services
 ```
 
-The demo starts a control plane, two registered services, and a gateway. It changes configuration without restarting services, shuts down the selected instance, and verifies discovery routes to the remaining instance. `npm run example:services` leaves the system running.
+The demo starts:
 
-## Existing ecosystems
-
-```js
-app.useExpress(cors());
-app.mount('/legacy', expressApp);
-app.fastify('/validated', async host => {
-  host.get('/hello', async () => ({ engine: 'fastify' }));
-});
+```text
+control plane
+    │
+    ├── users-a
+    ├── users-b
+    │
+    └── gateway
 ```
 
-Install the corresponding optional ecosystem packages. Native plugins use `app.register(plugin, { prefix })`; Fastify hooks, schemas, and decorations remain owned by the real Fastify instance. [Compatibility guide](docs/plugins.md).
+It then changes configuration live, routes through discovery, shuts down the selected instance, and verifies traffic moves to the remaining service.
 
-## Verification and release
+## What OpenMesh is — and is not
+
+OpenMesh **is**:
+
+- a Node.js service runtime;
+- an application-level data plane for known HTTP services;
+- a discovery/configuration control plane with pluggable storage;
+- a place to make retry, overload, streaming, and shutdown semantics explicit.
+
+OpenMesh **is not**:
+
+- a Kubernetes replacement;
+- a distributed consensus system;
+- a NAT traversal layer or DHT;
+- a hidden sidecar mesh;
+- a claim that every application should stop using Express or Fastify.
+
+The project is pre-1.0. Public APIs are usable, but minor versions can still evolve compatibility.
+
+## Development
 
 ```sh
+npm ci --ignore-scripts
 npm test
 npm run test:types
+npm run test:package
 npm run demo:services
 npm run bench
 ```
 
-CI covers Node 22/24 on Windows/Linux. Checked-in reports include raw per-round data and workload limits. The Go experiment measures both Go-only HTTP and a Go-to-JavaScript HTTP boundary; it is not a released Go backend.
+CI covers Node 22/24 on Linux and Windows, real Redis integration, packed-package imports, examples, and normalized benchmark regression.
 
-[Contributing](CONTRIBUTING.md) · [Release instructions](docs/releasing.md) · [Launch material](docs/launch.md) · [Changelog](CHANGELOG.md). MIT License.
+## Documentation
+
+[API](docs/api.md) · [Services & control plane](docs/services.md) · [Peer routing](docs/distributed.md) · [0.4 architecture](docs/architecture-0.4.md) · [Observability](docs/observability.md) · [Plugins](docs/plugins.md) · [Performance](docs/performance.md) · [Releasing](docs/releasing.md) · [Changelog](CHANGELOG.md)
+
+## Contributing
+
+Bug reports, production edge cases, benchmark reproductions, adapter implementations, and focused PRs are welcome.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+**OpenMesh 0.4.0** · MIT licensed · [npm](https://www.npmjs.com/package/openmesh-node) · [source](https://github.com/yaohuangguan/openmesh-node) · [changelog](CHANGELOG.md)

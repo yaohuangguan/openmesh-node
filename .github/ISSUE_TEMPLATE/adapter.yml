@@ -1,0 +1,40 @@
+name: Adapter proposal
+description: Propose a registry, configuration, transport, or telemetry adapter
+title: "[adapter] "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: type
+    attributes:
+      label: Adapter type
+      options:
+        - Registry
+        - Configuration
+        - Registry + configuration
+        - Telemetry
+        - Transport
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: backend
+    attributes:
+      label: Backend / ecosystem
+      placeholder: etcd, PostgreSQL, NATS, OpenTelemetry exporter...
+    validations:
+      required: true
+
+  - type: textarea
+    id: semantics
+    attributes:
+      label: Required semantics
+      description: Describe leases, CAS, watches, reconnect behavior, ordering, durability, or delivery guarantees that matter.
+    validations:
+      required: true
+
+  - type: textarea
+    id: conformance
+    attributes:
+      label: Validation plan
+      description: For service adapters, explain how it will pass openmesh-node/services/testing conformance.
