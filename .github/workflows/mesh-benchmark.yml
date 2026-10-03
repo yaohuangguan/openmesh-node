@@ -72,6 +72,7 @@ jobs:
           --output=results/openmesh-ci.json
 
       - name: Run Envoy C++ sidecar benchmark
+        continue-on-error: true
         env:
           ENVOY_IMAGE: envoyproxy/envoy:v1.39-latest
           ENVOY_VERSION: "1.39"
@@ -84,6 +85,7 @@ jobs:
           --output=results/envoy-ci.json
 
       - name: Run Apache Dubbo proxyless benchmark
+        continue-on-error: true
         env:
           DUBBO_VERSION: 3.3.6
           DUBBO_ZOOKEEPER: 127.0.0.1:2181
@@ -97,6 +99,7 @@ jobs:
           --output=results/dubbo-ci.json
 
       - name: Run Dapr sidecar benchmark
+        continue-on-error: true
         env:
           DAPR_BIN: /tmp/dapr-runtime/daprd
           DAPR_VERSION: 1.18.0
@@ -109,11 +112,13 @@ jobs:
           --output=results/dapr-ci.json
 
       - name: Create Kubernetes 1.35 + Linkerd 2.20 benchmark topology
+        continue-on-error: true
         run: |
           chmod +x benchmarks/mesh/linkerd/setup.sh
           benchmarks/mesh/linkerd/setup.sh
 
       - name: Start Linkerd direct and meshed gateway forwards
+        continue-on-error: true
         run: |
           kubectl port-forward -n bench-direct svc/gateway 18080:8080 >/tmp/linkerd-direct-portforward.log 2>&1 &
           echo $! > /tmp/linkerd-direct-portforward.pid
@@ -130,6 +135,7 @@ jobs:
           done
 
       - name: Run Linkerd 2.20 Rust sidecar benchmark
+        continue-on-error: true
         env:
           LINKERD_VERSION: "2.20"
           LINKERD_DIRECT_URL: http://127.0.0.1:18080/work
@@ -144,6 +150,7 @@ jobs:
           --output=results/linkerd-ci.json
 
       - name: Render same-runner comparison
+        if: always()
         run: >-
           node benchmarks/mesh/compare.cjs
           benchmarks/mesh/results/openmesh-ci.json
