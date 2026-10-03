@@ -38,6 +38,9 @@ declare namespace openmesh {
   type AppOptions = Types.AppOptions;
   type OpenMeshOptions = Types.OpenMeshOptions;
   type MeshRuntimeOptions = Types.MeshRuntimeOptions;
+  type MeshTrafficPolicy = Types.MeshTrafficPolicy;
+  type MeshTrafficRoute = Types.MeshTrafficRoute;
+  type MeshTrafficWhen = Types.MeshTrafficWhen;
   type MeshedOpenMesh = Types.MeshedOpenMesh;
   type TypedRouteOptions = Types.TypedRouteOptions;
   type StandardSchemaV1<Input = unknown, Output = Input> = Types.StandardSchemaV1<Input, Output>;

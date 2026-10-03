@@ -8,6 +8,7 @@ export interface RequestContextState extends Record<string, unknown> {
   requestId: string;
   service: string;
   traceparent: string;
+  inboundHeaders: Readonly<Record<string, string | string[] | undefined>>;
   outboundHeaders: Record<string, string>;
 }
 
@@ -305,6 +306,7 @@ export function requestContext({ service = 'openmesh', requestIdHeader = 'x-requ
     state.requestId = requestId;
     state.service = service;
     state.traceparent = traceparent;
+    state.inboundHeaders = ctx.headers;
     state.outboundHeaders = outboundHeaders;
     ctx.set(requestIdHeader, requestId);
     ctx.set('traceparent', traceparent);

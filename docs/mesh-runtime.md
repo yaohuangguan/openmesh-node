@@ -221,6 +221,20 @@ const app = openmesh({
     services: {
       payments: {
         traffic: {
+          routes: [
+            {
+              name: 'beta-users',
+              when: {
+                headers: {
+                  'x-beta-user': 'true'
+                }
+              },
+              target: {
+                version: 'v2'
+              }
+            }
+          ],
+
           split: [
             {
               name: 'stable',
@@ -233,6 +247,7 @@ const app = openmesh({
               weight: 10
             }
           ],
+
           fallback: 'error'
         }
       }
@@ -240,6 +255,24 @@ const app = openmesh({
   }
 });
 ```
+
+Traffic `routes` are evaluated in order. A matching rule wins before the weighted split.
+
+When a mesh call happens inside an OpenMesh request context, header rules can inspect the original inbound request headers without automatically forwarding those headers to the downstream service. Only request-id/trace context and headers explicitly supplied on the mesh call are propagated by default.
+
+That makes a beta route possible without business-handler branching:
+
+```text
+incoming x-beta-user: true
+          ↓
+gateway handler
+          ↓
+payments.post(...)
+          ↓
+traffic route → version=v2
+```
+
+If no route matches, the weighted `split` is used.
 
 With a request key:
 

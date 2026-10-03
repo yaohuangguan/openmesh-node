@@ -1173,8 +1173,19 @@ export interface MeshTrafficTarget {
   weight: number;
 }
 
+export interface MeshTrafficWhen {
+  headers?: Readonly<Record<string, string>>;
+}
+
+export interface MeshTrafficRoute {
+  name?: string;
+  when: MeshTrafficWhen;
+  target: MeshMetadataMatch;
+}
+
 export interface MeshTrafficPolicy {
-  split: readonly MeshTrafficTarget[];
+  routes?: readonly MeshTrafficRoute[];
+  split?: readonly MeshTrafficTarget[];
   fallback?: 'all' | 'error';
 }
 
@@ -1243,21 +1254,57 @@ function metadataMatches(metadata: Readonly<Record<string, unknown>>, match: Mes
 
 function validateTrafficPolicy(policy: MeshTrafficPolicy | undefined): void {
   if (policy === undefined) return;
-  if (!policy || typeof policy !== 'object' || !Array.isArray(policy.split) || !policy.split.length) {
-    throw new TypeError('Mesh traffic policy needs a nonempty split array');
+  if (!policy || typeof policy !== 'object') {
+    throw new TypeError('Mesh traffic policy must be an object');
   }
   if (policy.fallback !== undefined && !['all', 'error'].includes(policy.fallback)) {
     throw new TypeError('Mesh traffic fallback must be all or error');
   }
 
-  for (const target of policy.split) {
-    if (!target || typeof target !== 'object') throw new TypeError('Invalid mesh traffic target');
-    validateMetadataMatch(target.match, 'Mesh traffic target match');
-    if (!Number.isFinite(target.weight) || target.weight <= 0) {
-      throw new TypeError('Mesh traffic target weight must be positive');
+  const hasRoutes = Array.isArray(policy.routes) && policy.routes.length > 0;
+  const hasSplit = Array.isArray(policy.split) && policy.split.length > 0;
+  if (!hasRoutes && !hasSplit) {
+    throw new TypeError('Mesh traffic policy needs routes, split, or both');
+  }
+
+  if (policy.routes !== undefined) {
+    if (!Array.isArray(policy.routes) || !policy.routes.length) {
+      throw new TypeError('Mesh traffic routes must be a nonempty array');
     }
-    if (target.name !== undefined && (typeof target.name !== 'string' || !target.name)) {
-      throw new TypeError('Mesh traffic target name must be nonempty');
+    for (const route of policy.routes) {
+      if (!route || typeof route !== 'object') throw new TypeError('Invalid mesh traffic route');
+      if (!route.when || typeof route.when !== 'object' || Array.isArray(route.when)) {
+        throw new TypeError('Mesh traffic route when must be an object');
+      }
+      const headers = route.when.headers;
+      if (!headers || typeof headers !== 'object' || Array.isArray(headers) || !Object.keys(headers).length) {
+        throw new TypeError('Mesh traffic route needs at least one header match');
+      }
+      for (const [header, value] of Object.entries(headers)) {
+        if (!header || typeof value !== 'string' || !value) {
+          throw new TypeError('Mesh traffic route headers need nonempty string names and values');
+        }
+      }
+      validateMetadataMatch(route.target, 'Mesh traffic route target');
+      if (route.name !== undefined && (typeof route.name !== 'string' || !route.name)) {
+        throw new TypeError('Mesh traffic route name must be nonempty');
+      }
+    }
+  }
+
+  if (policy.split !== undefined) {
+    if (!Array.isArray(policy.split) || !policy.split.length) {
+      throw new TypeError('Mesh traffic split must be a nonempty array');
+    }
+    for (const target of policy.split) {
+      if (!target || typeof target !== 'object') throw new TypeError('Invalid mesh traffic target');
+      validateMetadataMatch(target.match, 'Mesh traffic target match');
+      if (!Number.isFinite(target.weight) || target.weight <= 0) {
+        throw new TypeError('Mesh traffic target weight must be positive');
+      }
+      if (target.name !== undefined && (typeof target.name !== 'string' || !target.name)) {
+        throw new TypeError('Mesh traffic target name must be nonempty');
+      }
     }
   }
 }
@@ -1298,6 +1345,35 @@ function stableBucket(value: string, modulo: number): number {
   return high % modulo;
 }
 
+function normalizedHeaderValue(
+  headers: Readonly<Record<string, string | string[] | number | undefined>>,
+  name: string
+): string | undefined {
+  const wanted = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() !== wanted || value === undefined) continue;
+    if (Array.isArray(value)) return value.join(', ');
+    return String(value);
+  }
+  return undefined;
+}
+
+function trafficRouteMatches(
+  route: MeshTrafficRoute,
+  options: MeshRawRequestOptions,
+  state: ReturnType<typeof currentRequestContext>
+): boolean {
+  const headers = route.when.headers;
+  if (!headers) return false;
+
+  for (const [name, expected] of Object.entries(headers)) {
+    const explicit = normalizedHeaderValue(options.headers || {}, name);
+    const actual = explicit ?? normalizedHeaderValue(state?.inboundHeaders || {}, name);
+    if (actual !== expected) return false;
+  }
+  return true;
+}
+
 export class MeshService {
   readonly runtime: MeshRuntime;
   readonly service: string;
@@ -1333,6 +1409,13 @@ export class MeshService {
 
     const policy = this.options.traffic;
     if (!policy) return null;
+
+    const state = currentRequestContext();
+    for (const route of policy.routes || []) {
+      if (trafficRouteMatches(route, options, state)) return route.target;
+    }
+
+    if (!policy.split?.length) return null;
 
     const total = policy.split.reduce((sum, target) => sum + target.weight, 0);
     const scale = 1_000_000;

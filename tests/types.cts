@@ -66,5 +66,19 @@ const cjsMeshed = openmesh({
   }
 });
 
+const cjsPolicy: openmesh.MeshTrafficPolicy = {
+  routes: [
+    {
+      when: { headers: { 'x-beta-user': 'true' } },
+      target: { version: 'v2' }
+    }
+  ],
+  split: [
+    { match: { version: 'v1' }, weight: 90 },
+    { match: { version: 'v2' }, weight: 10 }
+  ]
+};
+void cjsPolicy;
+
 const cjsPayments = cjsMeshed.mesh('payments');
 void cjsPayments.post<{ id: string }>('/charges', { body: { amount: 10 } });

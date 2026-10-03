@@ -194,6 +194,12 @@ const meshed: MeshedOpenMesh = openmesh({
     services: {
       payments: {
         traffic: {
+          routes: [
+            {
+              when: { headers: { 'x-beta-user': 'true' } },
+              target: { version: 'v2' }
+            }
+          ],
           split: [
             { match: { version: 'v1' }, weight: 90 },
             { match: { version: 'v2' }, weight: 10 }

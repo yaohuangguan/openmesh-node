@@ -48,6 +48,7 @@ test('app.mesh provides lazy service calls, traffic policy and trace propagation
         instance: id,
         requestId: ctx.get('x-request-id') || null,
         traceparent: ctx.get('traceparent') || null,
+        betaHeader: ctx.get('x-beta-user') || null,
         amount: ctx.requestBody.amount
       }))
       .get('/stream', () => Readable.from([version]))
@@ -76,6 +77,13 @@ test('app.mesh provides lazy service calls, traffic policy and trace propagation
       services: {
         payments: {
           traffic: {
+            routes: [
+              {
+                name: 'beta-users',
+                when: { headers: { 'x-beta-user': 'true' } },
+                target: { version: 'v2' }
+              }
+            ],
             split: [
               { name: 'stable', match: { version: 'v1' }, weight: 90 },
               { name: 'canary', match: { version: 'v2' }, weight: 10 }
@@ -121,6 +129,21 @@ test('app.mesh provides lazy service calls, traffic policy and trace propagation
     assert.equal(checkoutBody.payment.traceparent, checkoutBody.gatewayTrace);
     assert.equal(checkoutBody.payment.amount, 25);
     assert.ok(['v1', 'v2'].includes(checkoutBody.payment.version));
+
+    const betaCheckout = await fetch(gatewayURL + '/checkout', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-request-id': 'checkout-beta',
+        'x-beta-user': 'true'
+      },
+      body: JSON.stringify({ userId: 'beta-user', amount: 30 })
+    });
+    assert.equal(betaCheckout.status, 200);
+    const betaBody = await betaCheckout.json();
+    assert.equal(betaBody.payment.version, 'v2');
+    assert.equal(betaBody.payment.requestId, 'checkout-beta');
+    assert.equal(betaBody.payment.betaHeader, null);
 
     const forcedCanary = await payments.get('/version', {
       target: { version: 'v2' }
