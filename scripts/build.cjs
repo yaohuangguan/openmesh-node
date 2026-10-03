@@ -28,6 +28,8 @@ Object.assign(module.exports, api, { default: openmesh, openmesh });
 `);
 
 writeFileSync(path.join(root, 'dist', 'types', 'index.d.cts'), `import type * as Types from './index.js';
+declare function openmesh(options: Types.OpenMeshOptions & { identity: Types.WorkloadIdentityOptions; mesh: Types.MeshRuntimeOptions }): Types.IdentifiedMeshedOpenMesh;
+declare function openmesh(options: Types.OpenMeshOptions & { identity: Types.WorkloadIdentityOptions }): Types.IdentifiedOpenMesh;
 declare function openmesh(options: Types.OpenMeshOptions & { mesh: Types.MeshRuntimeOptions }): Types.MeshedOpenMesh;
 declare function openmesh(options?: Types.OpenMeshOptions): Types.OpenMesh;
 declare namespace openmesh {
@@ -41,8 +43,13 @@ declare namespace openmesh {
   type MeshRuntimeOptions = Types.MeshRuntimeOptions;
   type MeshIdentityOptions = Types.MeshIdentityOptions;
   type WorkloadIdentityOptions = Types.WorkloadIdentityOptions;
+  type WorkloadIdentityMaterial = Types.WorkloadIdentityMaterial;
+  type WorkloadIdentityRotationOptions = Types.WorkloadIdentityRotationOptions;
   type WorkloadAuthorizerOptions = Types.WorkloadAuthorizerOptions;
   type WorkloadCertificateAuthority = Types.WorkloadCertificateAuthority;
+  type WorkloadRuntime = Types.WorkloadRuntime;
+  type IdentifiedOpenMesh = Types.IdentifiedOpenMesh;
+  type IdentifiedMeshedOpenMesh = Types.IdentifiedMeshedOpenMesh;
   type MeshTrafficPolicy = Types.MeshTrafficPolicy;
   type MeshTrafficRoute = Types.MeshTrafficRoute;
   type MeshTrafficWhen = Types.MeshTrafficWhen;

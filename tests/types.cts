@@ -110,3 +110,15 @@ const cjsPeerTls: mesh.PeerTlsOptions = {
   expectedIdentity: 'spiffe://openmesh.test/service/payments'
 };
 void cjsPeerTls;
+
+
+const cjsIdentified = openmesh({
+  service: 'gateway',
+  identity: cjsWorkloadIdentity
+});
+const cjsWorkloadId: string = cjsIdentified.workload.id;
+void cjsWorkloadId;
+void cjsIdentified.workload.rotate(
+  { ca: 'next-ca', cert: 'next-cert', key: 'next-key' },
+  { graceMs: 30_000 }
+);

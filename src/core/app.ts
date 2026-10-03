@@ -826,6 +826,24 @@ export class OpenMesh {
   get prefix(): string { return this._prefix; }
   get version(): string { return '0.4.0'; }
 
+  _updateTlsContext(tls: HttpsServerOptions): this {
+    const root = this._root;
+    if (!tls || typeof tls !== 'object' || Array.isArray(tls)) {
+      throw new TypeError('tls must be an HTTPS server options object');
+    }
+    if (!root._options.tls) throw new Error('Application TLS is not configured');
+
+    const next = { ...root._options.tls, ...tls };
+    if (root._server) {
+      if (typeof (root._server as https.Server).setSecureContext !== 'function') {
+        throw new Error('Application is not using an HTTPS server');
+      }
+      (root._server as https.Server).setSecureContext(next);
+    }
+    root._options.tls = next;
+    return this;
+  }
+
   _emit(event: AppEvent): void {
     const observer = this._root._observer;
     if (!observer) return;

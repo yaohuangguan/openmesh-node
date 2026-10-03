@@ -18,7 +18,7 @@ OpenMesh lets a Node.js application begin as an ordinary typed HTTP API and grow
 
 The 0.5 preview adds `app.mesh('service')` as a small developer facade over the existing discovery-backed `ServicePool` and `PeerPool` runtime. The native request path remains dependency-light, while mesh calls reuse bounded queues, per-service bulkheads, adaptive concurrency, deadlines, retries, circuit breaking, streaming, tracing, traffic subsets, and existing control-plane adapters.
 
-The package ships ESM, CommonJS, and generated TypeScript declarations. The 0.5 preview also includes SPIFFE-style workload identity and service-to-service mTLS with CA verification, URI SAN matching, and inbound service allow-lists. Certificate issuance and rotation remain external responsibilities.
+The package ships ESM, CommonJS, and generated TypeScript declarations. The 0.5 preview also includes SPIFFE-style workload identity and service-to-service mTLS with CA verification, URI SAN matching, inbound service allow-lists, and zero-restart certificate hot rotation. Certificate issuance and revocation distribution remain external responsibilities.
 
 ## What to lead with
 
@@ -36,8 +36,8 @@ When presenting OpenMesh, lead with these ideas in order:
 4. **Real control-plane behavior.**
    Registration leases, membership watches, live config CAS, least-privilege credentials, and Redis-backed persistence are working features.
 
-5. **Identity is real, PKI automation is not.**
-   OpenMesh 0.5 authenticates workloads with SPIFFE-style URI identities and mutual TLS. It does not yet issue, rotate, or distribute certificates, so do not market it as a transparent Istio/Linkerd replacement.
+5. **Identity is real, PKI issuance is still external.**
+   OpenMesh 0.5 authenticates workloads with SPIFFE-style URI identities and mutual TLS and can hot-rotate newly issued cert/key material. It does not yet issue certificates or distribute revocation state, so do not market it as a transparent Istio/Linkerd replacement.
 
 6. **Measured rather than marketed performance.**
    Benchmarks are reproducible regression evidence, not “fastest framework” advertising.
@@ -52,7 +52,7 @@ When presenting OpenMesh, lead with these ideas in order:
 >
 > The service handle is backed by the existing OpenMesh runtime: discovery watches, metadata traffic subsets, P2C/rendezvous routing, per-service admission, adaptive concurrency, deadlines, retry rules, circuits, streaming semantics, trace propagation, and peer metrics. The control plane adds registration leases, scoped credentials, live config CAS, and durable Redis adapters.
 >
-> The key implementation choice is application-native rather than sidecar-native: there is no extra proxy hop in the OpenMesh request path. The 0.5 preview now authenticates service calls with SPIFFE-style workload identity and mutual TLS, while certificate issuance/rotation stays outside the runtime. OpenMesh 0.4 remains the current npm release; the smaller `app.mesh()` developer surface is the 0.5 preview.
+> The key implementation choice is application-native rather than sidecar-native: there is no extra proxy hop in the OpenMesh request path. The 0.5 preview authenticates service calls with SPIFFE-style workload identity and mutual TLS and can hot-rotate already-issued credentials; certificate issuance stays outside the runtime. OpenMesh 0.4 remains the current npm release; the smaller `app.mesh()` developer surface is the 0.5 preview.
 
 ## Demonstrations
 
@@ -196,6 +196,6 @@ The release includes:
 
 The **0.5 preview branch** adds the smaller developer path described above: simple Standard Schema typed routes, `app.mesh('service')`, automatic request-context propagation, metadata traffic targeting/weighted subsets, locality failover, live traffic policy, complete HTTP lifecycle hooks, expanded body-parser plugins, and SPIFFE-style workload identity with service-to-service mTLS.
 
-The identity layer verifies CA chains and exact workload URI SANs and supports inbound service allow-lists. Certificate issuance, renewal/rotation, and revocation distribution are **not** automated by OpenMesh yet. Keep that boundary visible in launch material rather than implying transparent Istio/Linkerd parity.
+The identity layer verifies CA chains and exact workload URI SANs, supports inbound service allow-lists, and can hot-rotate supplied cert/key material without process restart. Certificate issuance, renewal scheduling, and revocation distribution are **not** automated by OpenMesh yet. Keep that boundary visible in launch material rather than implying transparent Istio/Linkerd parity.
 
 The project remains pre-1.0. Compatibility may evolve between minor releases.

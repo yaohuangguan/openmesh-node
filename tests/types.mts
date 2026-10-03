@@ -265,3 +265,17 @@ openmesh().get('/typed-peer-state', {}, async ({ state }) => {
   void peerService;
   return { ok: true };
 });
+
+
+const workloadId: string = secureMeshed.workload.id;
+const workloadService: string = secureMeshed.workload.service;
+void workloadId;
+void workloadService;
+await secureMeshed.workload.rotate(
+  {
+    ca: 'next-ca',
+    cert: 'next-cert',
+    key: 'next-key'
+  },
+  { graceMs: 30_000 }
+);

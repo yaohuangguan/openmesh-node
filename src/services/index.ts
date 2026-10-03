@@ -1,14 +1,24 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import type { ServerResponse } from 'node:http';
-import { TLSSocket, type SecureVersion } from 'node:tls';
+import { TLSSocket, createSecureContext, type SecureVersion } from 'node:tls';
 import { definePlugin } from '../core/app.js';
 import type { OpenMesh, Middleware } from '../core/app.js';
 import type { Context } from '../core/context.js';
 import { HttpError } from '../core/context.js';
 import { jsonBody, currentRequestContext } from '../plugins/index.js';
 import { PeerPool, PeerError, PeerResponse } from '../mesh/index.js';
-import type { Peer, PeerOptions, PeerPoolOptions, PeerPoolStats, PeerStats, PeerStreamOptions, PeerStreamResponse } from '../mesh/index.js';
+import type {
+  Peer,
+  PeerOptions,
+  PeerPoolOptions,
+  PeerPoolStats,
+  PeerStats,
+  PeerStreamOptions,
+  PeerStreamResponse,
+  PeerTlsOptions,
+  PeerTlsRotationOptions
+} from '../mesh/index.js';
 import {
   certificatePemHasIdentity,
   certificateUriIdentities,
@@ -1192,6 +1202,15 @@ export interface WorkloadIdentityOptions extends Omit<MeshIdentityOptions, 'serv
   allow?: readonly string[];
 }
 
+export interface WorkloadIdentityMaterial {
+  ca: WorkloadCertificateAuthority;
+  cert: string | Buffer;
+  key: string | Buffer;
+  passphrase?: string;
+}
+
+export type WorkloadIdentityRotationOptions = PeerTlsRotationOptions;
+
 export interface WorkloadAuthorizerOptions {
   trustDomain: string;
   allow?: readonly string[];
@@ -1239,6 +1258,18 @@ export function validateMeshIdentityOptions(identity: MeshIdentityOptions): void
   } catch (error) {
     if (error instanceof TypeError) throw error;
     throw new TypeError('workload identity cert must be a valid X.509 certificate', { cause: error });
+  }
+
+  try {
+    createSecureContext({
+      ca: identity.ca,
+      cert: identity.cert,
+      key: identity.key,
+      ...(identity.passphrase !== undefined ? { passphrase: identity.passphrase } : {}),
+      minVersion: identity.minVersion ?? 'TLSv1.3'
+    });
+  } catch (error) {
+    throw new TypeError('workload identity certificate and private key are invalid or do not match', { cause: error });
   }
 }
 
@@ -1557,6 +1588,7 @@ export class MeshService {
   private _trafficWatcher: ConfigWatcher | null = null;
   private _traffic: MeshTrafficPolicy | undefined;
   private _trafficRevision: number | null = null;
+  private _tls: PeerTlsOptions | undefined;
   private _closed = false;
   private _counter = 0;
 
@@ -1567,6 +1599,7 @@ export class MeshService {
     validateTrafficConfig(options.trafficConfig);
     this.options = Object.freeze({ ...options });
     this._traffic = options.traffic;
+    this._tls = options.tls;
   }
 
   get trafficPolicy(): Readonly<MeshTrafficPolicy> | undefined {
@@ -1642,9 +1675,12 @@ export class MeshService {
   private _pool(): Promise<ServicePool> {
     if (this._closed) return Promise.reject(new PeerError('Mesh service is closed', 'POOL_CLOSED'));
     if (!this._poolPromise) {
-      const { traffic: _traffic, trafficConfig: _trafficConfig, ...poolOptions } = this.options;
+      const { traffic: _traffic, trafficConfig: _trafficConfig, tls: _configuredTls, ...poolOptions } = this.options;
       this._poolPromise = this._initTrafficConfig()
-        .then(() => this.runtime.client.service(this.service, poolOptions))
+        .then(() => this.runtime.client.service(this.service, {
+          ...poolOptions,
+          ...(this._tls ? { tls: this._tls } : {})
+        }))
         .catch(error => {
           this._poolPromise = null;
           throw error;
@@ -1806,6 +1842,13 @@ export class MeshService {
     return this._data<T>('DELETE', path, options);
   }
 
+  async _updateTls(tls: PeerTlsOptions, options: PeerTlsRotationOptions = {}): Promise<void> {
+    if (this._closed) throw new PeerError('Mesh service is closed', 'POOL_CLOSED');
+    this._tls = tls;
+    const pending = this._poolPromise;
+    if (pending) (await pending).pool.updateTls(tls, options);
+  }
+
   async stats(): Promise<PeerStats[]> {
     return (await this._pool()).stats();
   }
@@ -1829,7 +1872,7 @@ export class MeshRuntime {
   readonly client: ControlClient;
   private readonly _ownsClient: boolean;
   private readonly _closeControl: boolean;
-  private readonly _identity: MeshIdentityOptions | undefined;
+  private _identity: MeshIdentityOptions | undefined;
   private readonly _defaults: MeshServiceOptions | undefined;
   private readonly _configured: Readonly<Record<string, MeshServiceOptions>>;
   private readonly _services = new Map<string, MeshService>();
@@ -1862,6 +1905,48 @@ export class MeshRuntime {
     }
   }
 
+  private _identityTls(serviceName: string, identity = this._identity): PeerTlsOptions | undefined {
+    if (!identity) return undefined;
+    return {
+      ca: identity.ca,
+      cert: identity.cert,
+      key: identity.key,
+      ...(identity.passphrase !== undefined ? { passphrase: identity.passphrase } : {}),
+      minVersion: identity.minVersion ?? 'TLSv1.3',
+      rejectUnauthorized: true,
+      expectedIdentity: workloadIdentityUri(identity.trustDomain, serviceName)
+    };
+  }
+
+  async rotateIdentity(
+    material: WorkloadIdentityMaterial,
+    options: WorkloadIdentityRotationOptions = {}
+  ): Promise<void> {
+    if (this._closed) throw new Error('Mesh runtime is closed');
+    const current = this._identity;
+    if (!current) throw new Error('Mesh workload identity is not configured');
+
+    const next: MeshIdentityOptions = {
+      ...current,
+      ...material
+    };
+    validateMeshIdentityOptions(next);
+
+    const services = Array.from(this._services.values());
+    try {
+      await Promise.all(
+        services.map(service => service._updateTls(this._identityTls(service.service, next)!, options))
+      );
+    } catch (error) {
+      await Promise.allSettled(
+        services.map(service => service._updateTls(this._identityTls(service.service, current)!, { graceMs: 0 }))
+      );
+      throw error;
+    }
+
+    this._identity = next;
+  }
+
   service(service: string, options?: MeshServiceOptions): MeshService {
     if (this._closed) throw new Error('Mesh runtime is closed');
     const serviceName = name(service);
@@ -1879,17 +1964,8 @@ export class MeshRuntime {
       options
     );
 
-    if (this._identity) {
-      resolved.tls = {
-        ca: this._identity.ca,
-        cert: this._identity.cert,
-        key: this._identity.key,
-        ...(this._identity.passphrase ? { passphrase: this._identity.passphrase } : {}),
-        minVersion: this._identity.minVersion ?? 'TLSv1.3',
-        rejectUnauthorized: true,
-        expectedIdentity: workloadIdentityUri(this._identity.trustDomain, serviceName)
-      };
-    }
+    const identityTls = this._identityTls(serviceName);
+    if (identityTls) resolved.tls = identityTls;
 
     const serviceClient = new MeshService(this, serviceName, resolved);
     this._services.set(serviceName, serviceClient);

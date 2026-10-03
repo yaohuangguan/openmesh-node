@@ -8,7 +8,7 @@ Traditional service meshes commonly put a network proxy beside every workload. O
 
 There is no sidecar hop in the OpenMesh data path.
 
-This is **not** a claim that OpenMesh 0.5 replaces Istio or Linkerd. The preview now includes SPIFFE-style workload identity and service-to-service mTLS, but certificate issuance, rotation, revocation distribution, transparent traffic interception, and Kubernetes networking integration remain outside the runtime.
+This is **not** a claim that OpenMesh 0.5 replaces Istio or Linkerd. The preview now includes SPIFFE-style workload identity, service-to-service mTLS, and zero-restart certificate hot rotation. Certificate issuance, revocation distribution, transparent traffic interception, and Kubernetes networking integration remain outside the runtime.
 
 ## Start with a normal API
 
@@ -313,7 +313,24 @@ OpenMesh currently handles:
 
 It does not yet operate a certificate authority or certificate distribution system.
 
-Certificate issuance, short-lived certificate renewal, revocation distribution, and zero-downtime certificate rotation remain external responsibilities in this preview.
+Certificate issuance and revocation distribution remain external responsibilities in this preview. Once new cert/key material is available, `app.workload.rotate(...)` updates the owned HTTPS server and existing mesh service pools without restarting the application.
+
+```ts
+await app.workload.rotate(
+  {
+    ca: readFileSync('./pki/ca.pem'),
+    cert: readFileSync('./pki/gateway-next.pem'),
+    key: readFileSync('./pki/gateway-next-key.pem')
+  },
+  {
+    graceMs: 30_000
+  }
+);
+```
+
+The replacement certificate must keep the application's configured SPIFFE identity. Invalid or mismatched material is rejected before activation.
+
+The owned HTTPS server swaps its secure context for new connections. Existing outbound mesh pools switch to new TLS agents while the previous agents may drain for `graceMs`; set `graceMs: 0` for an immediate cutover.
 
 ## Traffic policy
 
@@ -624,14 +641,14 @@ The 0.5 preview covers application-level service communication:
 It does **not** yet provide:
 
 - automatic certificate issuance or a built-in CA;
-- short-lived certificate renewal and zero-downtime rotation;
+- automatic certificate issuance/renewal;
 - revocation distribution;
 - transparent interception of arbitrary process traffic;
 - Kubernetes CNI integration;
 - ingress/gateway replacement;
 - L4 proxying for arbitrary non-HTTP protocols.
 
-The next mesh-security milestone is automated identity lifecycle: issuance/integration, rotation, and revocation without restarting workloads.
+The next mesh-security milestone is automated identity lifecycle around the existing hot-rotation primitive: certificate issuance/integration, renewal triggers, and revocation distribution.
 
 ## Product direction
 

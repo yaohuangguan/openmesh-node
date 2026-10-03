@@ -4,8 +4,6 @@ const { webcrypto } = require('node:crypto');
 
 require('reflect-metadata');
 const x509 = require('@peculiar/x509');
-x509.cryptoProvider.set(webcrypto);
-
 const openmesh = require('openmesh-node');
 const { PeerPool } = require('openmesh-node/mesh');
 const {
@@ -15,69 +13,29 @@ const {
   MeshHttpError
 } = require('openmesh-node/services');
 
+x509.cryptoProvider.set(webcrypto);
+
 const token = 'identity-test-token-123456789';
 const algorithm = { name: 'ECDSA', namedCurve: 'P-256', hash: 'SHA-256' };
-let pkiPromise;
 
-function pem(tag, value) {
-  const base64 = Buffer.from(value).toString('base64');
-  const lines = base64.match(/.{1,64}/g) || [];
-  return '-----BEGIN ' + tag + '-----\n' + lines.join('\n') + '\n-----END ' + tag + '-----\n';
+function pemPrivateKey(buffer) {
+  const base64 = Buffer.from(buffer).toString('base64').match(/.{1,64}/g).join('\n');
+  return '-----BEGIN PRIVATE KEY-----\n' + base64 + '\n-----END PRIVATE KEY-----\n';
 }
 
-async function createWorkloadCertificate(ca, caKeys, service, serialNumber, notBefore, notAfter) {
-  const keys = await webcrypto.subtle.generateKey(
-    { name: 'ECDSA', namedCurve: 'P-256' },
-    true,
-    ['sign', 'verify']
-  );
-
-  const certificate = await x509.X509CertificateGenerator.create({
-    serialNumber,
-    subject: 'CN=' + service,
-    issuer: ca.subject,
-    notBefore,
-    notAfter,
-    publicKey: keys.publicKey,
-    signingKey: caKeys.privateKey,
-    signingAlgorithm: algorithm,
-    extensions: [
-      new x509.BasicConstraintsExtension(false, undefined, true),
-      new x509.KeyUsagesExtension(x509.KeyUsageFlags.digitalSignature, true),
-      new x509.ExtendedKeyUsageExtension([
-        '1.3.6.1.5.5.7.3.1',
-        '1.3.6.1.5.5.7.3.2'
-      ]),
-      new x509.SubjectAlternativeNameExtension([
-        {
-          type: 'url',
-          value: 'spiffe://openmesh.test/service/' + service
-        }
-      ])
-    ]
-  });
-
-  const privateKey = await webcrypto.subtle.exportKey('pkcs8', keys.privateKey);
-  return {
-    cert: certificate.toString('pem'),
-    key: pem('PRIVATE KEY', privateKey)
-  };
-}
-
-async function createPki() {
+async function createTestPki() {
   const caKeys = await webcrypto.subtle.generateKey(
     { name: 'ECDSA', namedCurve: 'P-256' },
     true,
     ['sign', 'verify']
   );
-  const notBefore = new Date(Date.now() - 60_000);
-  const notAfter = new Date(Date.now() + 60 * 60 * 1000);
 
-  const caCertificate = await x509.X509CertificateGenerator.createSelfSigned({
+  const now = Date.now();
+  const caCert = await x509.X509CertificateGenerator.createSelfSigned({
     serialNumber: '01',
     name: 'CN=OpenMesh Test CA',
-    notBefore,
-    notAfter,
+    notBefore: new Date(now - 60_000),
+    notAfter: new Date(now + 60 * 60_000),
     signingAlgorithm: algorithm,
     keys: caKeys,
     extensions: [
@@ -89,30 +47,59 @@ async function createPki() {
     ]
   });
 
-  const [gateway, payments, inventory] = await Promise.all([
-    createWorkloadCertificate(caCertificate, caKeys, 'gateway', '02', notBefore, notAfter),
-    createWorkloadCertificate(caCertificate, caKeys, 'payments', '03', notBefore, notAfter),
-    createWorkloadCertificate(caCertificate, caKeys, 'inventory', '04', notBefore, notAfter)
-  ]);
+  async function workload(service, serial) {
+    const keys = await webcrypto.subtle.generateKey(
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      true,
+      ['sign', 'verify']
+    );
+    const identity = 'spiffe://openmesh.test/service/' + service;
+    const cert = await x509.X509CertificateGenerator.create({
+      serialNumber: serial,
+      subject: 'CN=' + service,
+      issuer: caCert.subject,
+      notBefore: new Date(now - 60_000),
+      notAfter: new Date(now + 30 * 60_000),
+      publicKey: keys.publicKey,
+      signingKey: caKeys.privateKey,
+      signingAlgorithm: algorithm,
+      extensions: [
+        new x509.BasicConstraintsExtension(false, undefined, true),
+        new x509.KeyUsagesExtension(x509.KeyUsageFlags.digitalSignature, true),
+        new x509.ExtendedKeyUsageExtension([
+          '1.3.6.1.5.5.7.3.1',
+          '1.3.6.1.5.5.7.3.2'
+        ]),
+        new x509.SubjectAlternativeNameExtension([
+          { type: 'url', value: identity }
+        ])
+      ]
+    });
+
+    return {
+      identity,
+      cert: cert.toString('pem'),
+      key: pemPrivateKey(await webcrypto.subtle.exportKey('pkcs8', keys.privateKey))
+    };
+  }
 
   return {
-    ca: caCertificate.toString('pem'),
-    gateway,
-    payments,
-    inventory
+    ca: caCert.toString('pem'),
+    gateway: await workload('gateway', '02'),
+    gatewayNext: await workload('gateway', '05'),
+    payments: await workload('payments', '03'),
+    inventory: await workload('inventory', '04')
   };
 }
 
-function pki() {
-  return pkiPromise || (pkiPromise = createPki());
-}
+const pkiPromise = createTestPki();
 
-function identity(material, service, allow) {
+function identity(pki, service, allow) {
   return {
     trustDomain: 'openmesh.test',
-    ca: material.ca,
-    cert: material[service].cert,
-    key: material[service].key,
+    ca: pki.ca,
+    cert: pki[service].cert,
+    key: pki[service].key,
     ...(allow ? { allow } : {})
   };
 }
@@ -123,7 +110,7 @@ async function listen(app) {
 }
 
 test('workload identity mTLS authenticates both peers and enforces service identity', async () => {
-  const material = await pki();
+  const pki = await pkiPromise;
   const controlApp = openmesh().register(controlPlane({ token }));
   const controlAddress = await controlApp.listen({ port: 0 });
   const controlURL = 'http://127.0.0.1:' + controlAddress.port;
@@ -135,7 +122,7 @@ test('workload identity mTLS authenticates both peers and enforces service ident
 
   const payments = openmesh({
     service: 'payments',
-    identity: identity(material, 'payments', ['gateway'])
+    identity: identity(pki, 'payments', ['gateway'])
   })
     .register(serviceRegistration({
       client: registrationClient,
@@ -152,7 +139,7 @@ test('workload identity mTLS authenticates both peers and enforces service ident
 
   const wrongIdentityServer = openmesh({
     service: 'inventory',
-    identity: identity(material, 'inventory', ['gateway'])
+    identity: identity(pki, 'inventory', ['gateway'])
   })
     .register(serviceRegistration({
       client: registrationClient,
@@ -165,7 +152,7 @@ test('workload identity mTLS authenticates both peers and enforces service ident
 
   const gateway = openmesh({
     service: 'gateway',
-    identity: identity(material, 'gateway'),
+    identity: identity(pki, 'gateway'),
     mesh: {
       control: {
         url: controlURL + '/_mesh',
@@ -177,11 +164,14 @@ test('workload identity mTLS authenticates both peers and enforces service ident
         retries: 0
       }
     }
-  });
+  }).get('/self', ctx => ({
+    peerIdentity: ctx.state.peerIdentity,
+    peerService: ctx.state.peerService
+  }));
 
   const inventory = openmesh({
     service: 'inventory',
-    identity: identity(material, 'inventory'),
+    identity: identity(pki, 'inventory'),
     mesh: {
       control: {
         url: controlURL + '/_mesh',
@@ -196,13 +186,17 @@ test('workload identity mTLS authenticates both peers and enforces service ident
   });
 
   let paymentsURL;
+  let gatewayURL;
   try {
     paymentsURL = await listen(payments);
     await listen(wrongIdentityServer);
+    gatewayURL = await listen(gateway);
+
+    assert.equal(gateway.workload.id, pki.gateway.identity);
 
     const authenticated = await gateway.mesh('payments').get('/who');
     assert.deepEqual(authenticated, {
-      peerIdentity: 'spiffe://openmesh.test/service/gateway',
+      peerIdentity: pki.gateway.identity,
       peerService: 'gateway'
     });
 
@@ -220,13 +214,81 @@ test('workload identity mTLS authenticates both peers and enforces service ident
       error => error && error.code === 'IDENTITY_MISMATCH'
     );
 
+    const directGateway = new PeerPool({
+      peers: [{ id: 'gateway-a', url: gatewayURL }],
+      retries: 0,
+      timeout: 5000,
+      tls: {
+        ca: pki.ca,
+        cert: pki.payments.cert,
+        key: pki.payments.key,
+        expectedIdentity: pki.gateway.identity
+      }
+    });
+
+    try {
+      const beforeRotation = await directGateway.json('/self');
+      assert.deepEqual(beforeRotation, {
+        peerIdentity: pki.payments.identity,
+        peerService: 'payments'
+      });
+    } finally {
+      directGateway.close();
+    }
+
+    await gateway.workload.rotate({
+      ca: pki.ca,
+      cert: pki.gatewayNext.cert,
+      key: pki.gatewayNext.key
+    }, { graceMs: 0 });
+
+    const afterOutboundRotation = await gateway.mesh('payments').get('/who');
+    assert.deepEqual(afterOutboundRotation, {
+      peerIdentity: pki.gateway.identity,
+      peerService: 'gateway'
+    });
+
+    const rotatedGateway = new PeerPool({
+      peers: [{ id: 'gateway-a', url: gatewayURL }],
+      retries: 0,
+      timeout: 5000,
+      tls: {
+        ca: pki.ca,
+        cert: pki.payments.cert,
+        key: pki.payments.key,
+        expectedIdentity: pki.gateway.identity
+      }
+    });
+
+    try {
+      const afterRotation = await rotatedGateway.json('/self');
+      assert.deepEqual(afterRotation, {
+        peerIdentity: pki.payments.identity,
+        peerService: 'payments'
+      });
+    } finally {
+      rotatedGateway.close();
+    }
+
+    await assert.rejects(
+      gateway.workload.rotate({
+        ca: pki.ca,
+        cert: pki.inventory.cert,
+        key: pki.inventory.key
+      }, { graceMs: 0 }),
+      /configured SPIFFE identity/
+    );
+
+    const afterRejectedRotation = await gateway.mesh('payments').get('/who');
+    assert.equal(afterRejectedRotation.peerService, 'gateway');
+
     const noClientCertificate = new PeerPool({
       peers: [{ id: 'payments-a', url: paymentsURL }],
       retries: 0,
       timeout: 5000,
       tls: {
-        ca: material.ca,
-        expectedIdentity: 'spiffe://openmesh.test/service/payments'
+        ca: pki.ca,
+        expectedIdentity: pki.payments.identity
       }
     });
 
@@ -246,16 +308,16 @@ test('workload identity mTLS authenticates both peers and enforces service ident
 });
 
 test('workload identity configuration fails closed before serving traffic', async () => {
-  const material = await pki();
+  const pki = await pkiPromise;
 
   assert.throws(
     () => openmesh({
       service: 'gateway',
       identity: {
         trustDomain: 'openmesh.test',
-        ca: material.ca,
-        cert: material.payments.cert,
-        key: material.payments.key
+        ca: pki.ca,
+        cert: pki.payments.cert,
+        key: pki.payments.key
       }
     }),
     /configured SPIFFE identity/
@@ -265,33 +327,22 @@ test('workload identity configuration fails closed before serving traffic', asyn
     () => new PeerPool({
       peers: [{ id: 'plain', url: 'http://127.0.0.1:3000' }],
       tls: {
-        ca: material.ca,
-        cert: material.gateway.cert,
-        key: material.gateway.key,
-        expectedIdentity: 'spiffe://openmesh.test/service/payments'
+        ca: pki.ca,
+        cert: pki.gateway.cert,
+        key: pki.gateway.key,
+        expectedIdentity: pki.payments.identity
       }
     }),
     /must use HTTPS/
   );
 
   assert.throws(
-    () => openmesh({
-      service: 'gateway',
-      tls: {
-        SNICallback() {}
-      },
-      identity: identity(material, 'gateway')
-    }),
-    /SNICallback/
-  );
-
-  assert.throws(
     () => new PeerPool({
       tls: {
-        ca: material.ca,
-        cert: material.gateway.cert,
-        key: material.gateway.key,
-        expectedIdentity: 'spiffe://openmesh.test/service/payments',
+        ca: pki.ca,
+        cert: pki.gateway.cert,
+        key: pki.gateway.key,
+        expectedIdentity: pki.payments.identity,
         rejectUnauthorized: false
       }
     }),

@@ -251,6 +251,10 @@ export interface PeerTlsOptions {
   expectedIdentity?: string;
 }
 
+export interface PeerTlsRotationOptions {
+  graceMs?: number;
+}
+
 export interface PeerPoolOptions {
   peers?: Peer[];
   tls?: PeerTlsOptions;
@@ -269,6 +273,49 @@ export interface PeerPoolOptions {
   adaptiveConcurrency?: boolean | AdaptiveConcurrencyOptions;
 }
 
+function createHttpsAgent(
+  tlsOptions: PeerTlsOptions | undefined,
+  maxSockets: number
+): { agent: https.Agent; requireTls: boolean } {
+  if (tlsOptions !== undefined && (!tlsOptions || typeof tlsOptions !== 'object' || Array.isArray(tlsOptions))) {
+    throw new TypeError('tls must be a TLS client options object');
+  }
+  if ((tlsOptions?.cert === undefined) !== (tlsOptions?.key === undefined)) {
+    throw new TypeError('TLS client cert and key must be configured together');
+  }
+
+  const expectedIdentity = tlsOptions?.expectedIdentity;
+  if (expectedIdentity !== undefined) {
+    validateWorkloadIdentity(expectedIdentity);
+    if (tlsOptions?.rejectUnauthorized === false) {
+      throw new TypeError('rejectUnauthorized cannot be false when workload identity verification is enabled');
+    }
+  }
+
+  const { expectedIdentity: _expectedIdentity, ...agentTls } = tlsOptions || {};
+  const agent = new https.Agent({
+    keepAlive: true,
+    maxSockets,
+    maxTotalSockets: 256,
+    ...agentTls,
+    ...(expectedIdentity
+      ? {
+          checkServerIdentity: (_hostname: string, certificate: PeerCertificate) => {
+            if (!certificateHasExclusiveWorkloadIdentity(certificate, expectedIdentity)) {
+              return new PeerError(
+                'Peer certificate does not match workload identity ' + expectedIdentity,
+                'IDENTITY_MISMATCH'
+              );
+            }
+            return undefined;
+          }
+        }
+      : {})
+  });
+
+  return { agent, requireTls: expectedIdentity !== undefined };
+}
+
 export class PeerPool {
   timeout: number;
   retries: number;
@@ -280,7 +327,9 @@ export class PeerPool {
   selection: PeerSelectionStrategy;
   private _http: http.Agent;
   private _https: https.Agent;
+  private _maxSockets: number;
   private _requireTls = false;
+  private _retiredHttpsAgents = new Map<https.Agent, NodeJS.Timeout>();
   private _transport: Transport;
   private _streamTransport: StreamTransport;
   private _observer: PeerPoolObserver | null;
@@ -348,42 +397,13 @@ export class PeerPool {
     if (options.streamTransport !== undefined && typeof options.streamTransport !== 'function') throw new TypeError('streamTransport must be a function');
     if (options.onEvent !== undefined && typeof options.onEvent !== 'function') throw new TypeError('onEvent must be a function');
 
-    const tlsOptions = options.tls;
-    if (tlsOptions !== undefined && (!tlsOptions || typeof tlsOptions !== 'object' || Array.isArray(tlsOptions))) {
-      throw new TypeError('tls must be a TLS client options object');
-    }
-    if ((tlsOptions?.cert === undefined) !== (tlsOptions?.key === undefined)) {
-      throw new TypeError('TLS client cert and key must be configured together');
-    }
-    if (tlsOptions?.expectedIdentity !== undefined) {
-      validateWorkloadIdentity(tlsOptions.expectedIdentity);
-      if (tlsOptions.rejectUnauthorized === false) {
-        throw new TypeError('rejectUnauthorized cannot be false when workload identity verification is enabled');
-      }
-      this._requireTls = true;
-    }
+    this._maxSockets = maxSockets;
+    const secure = createHttpsAgent(options.tls, maxSockets);
+    this._requireTls = secure.requireTls;
 
     this._observer = options.onEvent || null;
     this._http = new http.Agent({ keepAlive: true, maxSockets, maxTotalSockets: 256 });
-    this._https = new https.Agent({
-      keepAlive: true,
-      maxSockets,
-      maxTotalSockets: 256,
-      ...(tlsOptions || {}),
-      ...(tlsOptions?.expectedIdentity
-        ? {
-            checkServerIdentity: (_hostname: string, certificate: PeerCertificate) => {
-              if (!certificateHasExclusiveWorkloadIdentity(certificate, tlsOptions.expectedIdentity!)) {
-                return new PeerError(
-                  'Peer certificate does not match workload identity ' + tlsOptions.expectedIdentity,
-                  'IDENTITY_MISMATCH'
-                );
-              }
-              return undefined;
-            }
-          }
-        : {})
-    });
+    this._https = secure.agent;
     this._transport = options.transport || (request => this._send(request));
     this._streamTransport = options.streamTransport
       || (options.transport
@@ -393,6 +413,38 @@ export class PeerPool {
           }
         : request => this._sendStream(request));
     this.updatePeers(options.peers || []);
+  }
+
+  updateTls(tls: PeerTlsOptions, { graceMs = 30000 }: PeerTlsRotationOptions = {}): this {
+    if (this._closed) throw new PeerError('Peer pool is closed', 'POOL_CLOSED');
+    if (!Number.isSafeInteger(graceMs) || graceMs < 0) {
+      throw new TypeError('TLS rotation graceMs must be a nonnegative integer');
+    }
+
+    const secure = createHttpsAgent(tls, this._maxSockets);
+    try {
+      validatePeers(this.peers, secure.requireTls);
+    } catch (error) {
+      secure.agent.destroy();
+      throw error;
+    }
+
+    const previous = this._https;
+    this._https = secure.agent;
+    this._requireTls = secure.requireTls;
+
+    if (graceMs === 0) {
+      previous.destroy();
+      return this;
+    }
+
+    const timer = setTimeout(() => {
+      this._retiredHttpsAgents.delete(previous);
+      previous.destroy();
+    }, graceMs);
+    timer.unref();
+    this._retiredHttpsAgents.set(previous, timer);
+    return this;
   }
 
   updatePeers(peers: Peer[]): this {
@@ -1098,5 +1150,10 @@ export class PeerPool {
     for (const controller of this._active) controller.abort(new PeerError('Peer pool is closed', 'POOL_CLOSED'));
     this._http.destroy();
     this._https.destroy();
+    for (const [agent, timer] of this._retiredHttpsAgents) {
+      clearTimeout(timer);
+      agent.destroy();
+    }
+    this._retiredHttpsAgents.clear();
   }
 }

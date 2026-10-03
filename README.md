@@ -84,7 +84,7 @@ const charge = await payments.post('/charges', {
 
 That call reuses OpenMesh's existing discovery watch, per-service bulkhead, deadlines, retry policy, circuit state, peer routing, tracing, and metrics. Traffic rules, weighted canaries, locality preference/failover, and live control-plane policy updates sit above the same warm service pool. There is no sidecar hop.
 
-The 0.5 preview also includes **SPIFFE-style workload identity and service-to-service mTLS**: the same application identity config protects inbound HTTPS and authenticates outbound `app.mesh()` calls. Certificate issuance/rotation is still external, so OpenMesh should not be described as a drop-in Istio/Linkerd replacement.
+The 0.5 preview also includes **SPIFFE-style workload identity and service-to-service mTLS**: the same application identity config protects inbound HTTPS and authenticates outbound `app.mesh()` calls. OpenMesh can hot-rotate already-issued workload certificates without restarting the process; certificate issuance and revocation distribution remain external, so it should not be described as a drop-in Istio/Linkerd replacement.
 
 ## Why OpenMesh
 
