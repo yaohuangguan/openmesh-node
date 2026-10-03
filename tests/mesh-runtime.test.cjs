@@ -17,6 +17,15 @@ async function listen(app) {
   return 'http://127.0.0.1:' + address.port;
 }
 
+async function waitFor(check, message, timeout = 5000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (await check()) return;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  throw new Error(message);
+}
+
 test('app.mesh provides lazy service calls, traffic policy and trace propagation', async () => {
   const controlApp = openmesh().register(controlPlane({ token }));
   const controlURL = await listen(controlApp);
@@ -26,7 +35,7 @@ test('app.mesh provides lazy service calls, traffic policy and trace propagation
     timeout: 5000
   });
 
-  function paymentApp(id, version) {
+  function paymentApp(id, version, region = 'nz') {
     return openmesh()
       .use(bodyParser())
       .register(serviceRegistration({
@@ -34,17 +43,19 @@ test('app.mesh provides lazy service calls, traffic policy and trace propagation
         service: 'payments',
         id,
         ttl: 5000,
-        metadata: { version, region: 'nz' },
+        metadata: { version, region },
         url: address => 'http://127.0.0.1:' + address.port
       }))
       .get('/version', ctx => ({
         version,
+        region,
         instance: id,
         requestId: ctx.get('x-request-id') || null,
         traceparent: ctx.get('traceparent') || null
       }))
       .post('/charge', ctx => ({
         version,
+        region,
         instance: id,
         requestId: ctx.get('x-request-id') || null,
         traceparent: ctx.get('traceparent') || null,
@@ -58,8 +69,9 @@ test('app.mesh provides lazy service calls, traffic policy and trace propagation
       });
   }
 
-  const v1 = paymentApp('payments-v1', 'v1');
-  const v2 = paymentApp('payments-v2', 'v2');
+  const v1 = paymentApp('payments-v1-nz', 'v1', 'nz');
+  const v1au = paymentApp('payments-v1-au', 'v1', 'au');
+  const v2 = paymentApp('payments-v2', 'v2', 'nz');
   const gateway = openmesh({
     service: 'gateway',
     mesh: {
@@ -88,6 +100,10 @@ test('app.mesh provides lazy service calls, traffic policy and trace propagation
               { name: 'stable', match: { version: 'v1' }, weight: 90 },
               { name: 'canary', match: { version: 'v2' }, weight: 10 }
             ],
+            prefer: [
+              { name: 'local', match: { region: 'nz' } },
+              { name: 'regional-failover', match: { region: 'au' } }
+            ],
             fallback: 'error'
           }
         }
@@ -112,6 +128,7 @@ test('app.mesh provides lazy service calls, traffic policy and trace propagation
   let gatewayURL;
   try {
     await listen(v1);
+    await listen(v1au);
     await listen(v2);
     gatewayURL = await listen(gateway);
 
@@ -160,6 +177,24 @@ test('app.mesh provides lazy service calls, traffic policy and trace propagation
     });
     assert.equal(await streamedCanary.text(), 'v2');
 
+    const localStable = await payments.get('/version', {
+      target: { version: 'v1' }
+    });
+    assert.equal(localStable.version, 'v1');
+    assert.equal(localStable.region, 'nz');
+
+    await v1.close();
+    await waitFor(
+      async () => (await payments.stats()).every(peer => peer.id !== 'payments-v1-nz'),
+      'payments-v1-nz stayed in the discovery-backed pool'
+    );
+
+    const regionalFailover = await payments.get('/version', {
+      target: { version: 'v1' }
+    });
+    assert.equal(regionalFailover.version, 'v1');
+    assert.equal(regionalFailover.region, 'au');
+
     const sticky = [];
     for (let i = 0; i < 8; i++) {
       sticky.push((await payments.get('/version', { key: 'same-user' })).version);
@@ -196,6 +231,7 @@ test('app.mesh provides lazy service calls, traffic policy and trace propagation
   } finally {
     await gateway.close().catch(() => {});
     await v2.close().catch(() => {});
+    await v1au.close().catch(() => {});
     await v1.close().catch(() => {});
     await registrationClient.close().catch(() => {});
     await controlApp.close().catch(() => {});

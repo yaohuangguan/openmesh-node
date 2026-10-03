@@ -1183,9 +1183,15 @@ export interface MeshTrafficRoute {
   target: MeshMetadataMatch;
 }
 
+export interface MeshTrafficPreference {
+  name?: string;
+  match: MeshMetadataMatch;
+}
+
 export interface MeshTrafficPolicy {
   routes?: readonly MeshTrafficRoute[];
   split?: readonly MeshTrafficTarget[];
+  prefer?: readonly MeshTrafficPreference[];
   fallback?: 'all' | 'error';
 }
 
@@ -1263,8 +1269,9 @@ function validateTrafficPolicy(policy: MeshTrafficPolicy | undefined): void {
 
   const hasRoutes = Array.isArray(policy.routes) && policy.routes.length > 0;
   const hasSplit = Array.isArray(policy.split) && policy.split.length > 0;
-  if (!hasRoutes && !hasSplit) {
-    throw new TypeError('Mesh traffic policy needs routes, split, or both');
+  const hasPreference = Array.isArray(policy.prefer) && policy.prefer.length > 0;
+  if (!hasRoutes && !hasSplit && !hasPreference) {
+    throw new TypeError('Mesh traffic policy needs routes, split, prefer, or a combination');
   }
 
   if (policy.routes !== undefined) {
@@ -1304,6 +1311,19 @@ function validateTrafficPolicy(policy: MeshTrafficPolicy | undefined): void {
       }
       if (target.name !== undefined && (typeof target.name !== 'string' || !target.name)) {
         throw new TypeError('Mesh traffic target name must be nonempty');
+      }
+    }
+  }
+
+  if (policy.prefer !== undefined) {
+    if (!Array.isArray(policy.prefer) || !policy.prefer.length) {
+      throw new TypeError('Mesh traffic prefer must be a nonempty array');
+    }
+    for (const preference of policy.prefer) {
+      if (!preference || typeof preference !== 'object') throw new TypeError('Invalid mesh traffic preference');
+      validateMetadataMatch(preference.match, 'Mesh traffic preference match');
+      if (preference.name !== undefined && (typeof preference.name !== 'string' || !preference.name)) {
+        throw new TypeError('Mesh traffic preference name must be nonempty');
       }
     }
   }
@@ -1434,25 +1454,44 @@ export class MeshService {
   }
 
   private _candidatePeerIds(pool: ServicePool, options: MeshRawRequestOptions): readonly string[] | undefined {
+    const policy = this.options.traffic;
     const match = this._selectTrafficMatch(options);
-    if (!match) return options.peerIds;
+    const allowed = options.peerIds ? new Set(options.peerIds) : null;
 
-    let ids = pool.watcher.instances
-      .filter(instance => metadataMatches(instance.metadata, match))
-      .map(instance => instance.id);
+    let instances = pool.watcher.instances.filter(instance => !allowed || allowed.has(instance.id));
+    let narrowed = !!allowed;
 
-    if (options.peerIds) {
-      const allowed = new Set(options.peerIds);
-      ids = ids.filter(id => allowed.has(id));
+    if (match) {
+      const targeted = instances.filter(instance => metadataMatches(instance.metadata, match));
+      if (targeted.length) {
+        instances = targeted;
+        narrowed = true;
+      } else if (policy?.fallback === 'all' && !options.target) {
+        // Keep the caller-authorized base set and continue with soft preferences.
+      } else {
+        throw new PeerError(
+          'No instances of ' + this.service + ' match the requested traffic target',
+          'NO_TRAFFIC_TARGET'
+        );
+      }
     }
 
-    if (ids.length) return ids;
-    if (this.options.traffic?.fallback === 'all' && !options.target) return options.peerIds;
+    if (policy?.prefer?.length) {
+      for (const preference of policy.prefer) {
+        const preferred = instances.filter(instance => metadataMatches(instance.metadata, preference.match));
+        if (preferred.length) {
+          instances = preferred;
+          narrowed = true;
+          break;
+        }
+      }
+    }
 
-    throw new PeerError(
-      'No instances of ' + this.service + ' match the requested traffic target',
-      'NO_TRAFFIC_TARGET'
-    );
+    if (!instances.length) {
+      throw new PeerError('No peers available for ' + this.service, 'NO_PEERS');
+    }
+
+    return narrowed ? instances.map(instance => instance.id) : undefined;
   }
 
   private _requestOptions(pool: ServicePool, options: MeshRawRequestOptions, method: string): PeerOptions {

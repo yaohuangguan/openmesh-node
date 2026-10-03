@@ -248,6 +248,17 @@ const app = openmesh({
             }
           ],
 
+          prefer: [
+            {
+              name: 'local',
+              match: { region: 'nz' }
+            },
+            {
+              name: 'regional-failover',
+              match: { region: 'au' }
+            }
+          ],
+
           fallback: 'error'
         }
       }
@@ -286,6 +297,22 @@ await payments.post('/charges', {
 the weighted subset choice is deterministic for that key. A user can remain on the same release subset while peers inside that subset are still selected by the normal pool strategy.
 
 Without a key, OpenMesh distributes requests across the weighted subsets.
+
+After a route/weighted target is selected, `prefer` applies ordered soft locality preferences **inside that target**.
+
+For example, if the selected target is `version=v1`:
+
+```text
+version=v1
+    ↓
+prefer region=nz
+    ↓ unavailable
+prefer region=au
+    ↓
+v1 in Australia
+```
+
+The version decision does not change during regional failover. If none of the preferred metadata subsets has members, OpenMesh falls back to the already-selected target's remaining instances. This makes `prefer` suitable for locality/zone affinity rather than hard authorization boundaries.
 
 ## Explicit targeting
 

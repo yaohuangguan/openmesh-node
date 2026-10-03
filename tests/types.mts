@@ -203,6 +203,10 @@ const meshed: MeshedOpenMesh = openmesh({
           split: [
             { match: { version: 'v1' }, weight: 90 },
             { match: { version: 'v2' }, weight: 10 }
+          ],
+          prefer: [
+            { match: { region: 'nz' } },
+            { match: { region: 'au' } }
           ]
         }
       }
