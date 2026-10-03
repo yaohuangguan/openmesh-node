@@ -3,7 +3,7 @@ import type { AddressInfo, ListenOptions } from 'node:net';
 import type { ServerOptions } from 'node:http';
 import { Router, type Routable } from './router.js';
 import { compose } from './compose.js';
-import { Context, HttpError, respond } from './context.js';
+import { Context, HttpError, prepareResponse, sendPrepared } from './context.js';
 import { invokeMiddleware, expressMiddleware, type ExpressMiddleware } from './bridge.js';
 
 const PLUGIN = Symbol.for('openmesh.plugin');
@@ -12,6 +12,32 @@ const METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'TR
 export type Next = () => Promise<unknown>;
 export type Middleware = (ctx: Context, next: Next) => unknown | Promise<unknown>;
 export type Handler = (ctx: Context) => unknown | Promise<unknown>;
+export type RequestHook = (ctx: Context) => unknown | Promise<unknown>;
+export type ValueHook = (ctx: Context, value: unknown) => unknown | Promise<unknown>;
+export type ErrorHook = (error: Error, ctx: Context) => unknown | Promise<unknown>;
+export type HookName =
+  | 'onRequest'
+  | 'preParsing'
+  | 'preValidation'
+  | 'preHandler'
+  | 'postHandler'
+  | 'preSerialization'
+  | 'preSend'
+  | 'onResponse'
+  | 'onError';
+
+export interface RouteHooks {
+  onRequest?: RequestHook | RequestHook[];
+  preParsing?: RequestHook | RequestHook[];
+  preValidation?: RequestHook | RequestHook[];
+  preHandler?: RequestHook | RequestHook[];
+  postHandler?: ValueHook | ValueHook[];
+  preSerialization?: ValueHook | ValueHook[];
+  preSend?: ValueHook | ValueHook[];
+  onResponse?: RequestHook | RequestHook[];
+  onError?: ErrorHook | ErrorHook[];
+}
+
 export type { ExpressMiddleware };
 
 export interface RouteSchema {
@@ -39,6 +65,7 @@ export type SerializerCompiler = (context: {
 
 export interface RouteOptions {
   middleware?: Middleware | Middleware[];
+  hooks?: RouteHooks;
   serializer?: (body: unknown) => string | Buffer | Uint8Array;
   schema?: RouteSchema;
 }
@@ -90,6 +117,60 @@ export interface PluginMetadata {
 type PluginWithMetadata = Plugin & { [PLUGIN]?: Readonly<PluginMetadata> };
 type ResponseSerializer = (body: unknown) => string | Buffer | Uint8Array;
 
+const HOOK_NAMES = [
+  'onRequest',
+  'preParsing',
+  'preValidation',
+  'preHandler',
+  'postHandler',
+  'preSerialization',
+  'preSend',
+  'onResponse',
+  'onError'
+] as const;
+
+interface HookStore {
+  onRequest: RequestHook[];
+  preParsing: RequestHook[];
+  preValidation: RequestHook[];
+  preHandler: RequestHook[];
+  postHandler: ValueHook[];
+  preSerialization: ValueHook[];
+  preSend: ValueHook[];
+  onResponse: RequestHook[];
+  onError: ErrorHook[];
+}
+
+function hookStore(): HookStore {
+  return {
+    onRequest: [],
+    preParsing: [],
+    preValidation: [],
+    preHandler: [],
+    postHandler: [],
+    preSerialization: [],
+    preSend: [],
+    onResponse: [],
+    onError: []
+  };
+}
+
+function hookArray<T>(value: T | T[] | undefined): T[] {
+  return value === undefined ? [] : Array.isArray(value) ? value : [value];
+}
+
+function validateHookOptions(hooks: RouteHooks | undefined): void {
+  if (hooks === undefined) return;
+  if (!hooks || typeof hooks !== 'object' || Array.isArray(hooks)) {
+    throw new TypeError('Route hooks must be an object');
+  }
+  for (const [name, value] of Object.entries(hooks)) {
+    if (!HOOK_NAMES.includes(name as HookName)) throw new TypeError('Unknown hook: ' + name);
+    const list = Array.isArray(value) ? value : [value];
+    if (list.some(fn => typeof fn !== 'function')) throw new TypeError(name + ' hooks must contain functions');
+  }
+}
+
 interface RouteRecord extends Routable {
   method: string;
   path: string;
@@ -99,6 +180,8 @@ interface RouteRecord extends Routable {
   schema: RouteSchema | null;
   responseSerializers: Map<string, ResponseSerializer> | null;
   middleware: Middleware[];
+  localHooks: RouteHooks | null;
+  hooks: HookStore;
   run: Handler | null;
 }
 
@@ -158,6 +241,24 @@ function inherited<T>(scope: OpenMesh, key: keyof OpenMesh): T[] {
     chain.unshift(...((current[key] as unknown as T[]) || []));
   }
   return chain;
+}
+
+function inheritedHooks<K extends keyof HookStore>(scope: OpenMesh, name: K): HookStore[K] {
+  const chain: HookStore[K][number][] = [];
+  const scopes: OpenMesh[] = [];
+  for (let current: OpenMesh | null = scope; current; current = current._parent) scopes.unshift(current);
+  for (const current of scopes) chain.push(...current._hooks[name]);
+  return chain as HookStore[K];
+}
+
+function compileHooks(scope: OpenMesh, local: RouteHooks | undefined): HookStore {
+  const compiled = hookStore();
+  for (const name of Object.keys(compiled) as Array<keyof HookStore>) {
+    const inherited = inheritedHooks(scope, name) as Array<RequestHook | ValueHook | ErrorHook>;
+    const own = local ? hookArray(local[name] as never) as Array<RequestHook | ValueHook | ErrorHook> : [];
+    (compiled[name] as Array<RequestHook | ValueHook | ErrorHook>).push(...inherited, ...own);
+  }
+  return compiled;
 }
 
 function validationValue(ctx: Context, part: string): unknown {
@@ -235,11 +336,127 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   return !!value && typeof (value as PromiseLike<unknown>).then === 'function';
 }
 
+function runHookList<T extends (...args: any[]) => unknown>(
+  hooks: readonly T[],
+  args: Parameters<T>
+): void | Promise<void> {
+  let chain: Promise<void> | null = null;
+
+  for (const hook of hooks) {
+    if (chain) {
+      chain = chain.then(() => Promise.resolve(hook(...args)).then(() => undefined));
+      continue;
+    }
+    const value = hook(...args);
+    if (isPromiseLike(value)) chain = Promise.resolve(value).then(() => undefined);
+  }
+
+  return chain || undefined;
+}
+
+function responseValue(ctx: Context, returned: unknown): unknown {
+  return ctx.body !== undefined ? ctx.body : returned === ctx ? undefined : returned;
+}
+
+function runBeforeRouteHooks(hooks: HookStore, ctx: Context): void | Promise<void> {
+  const request = hooks.onRequest.length ? runHookList(hooks.onRequest, [ctx]) : undefined;
+  if (isPromiseLike(request)) {
+    return Promise.resolve(request).then(() => {
+      const parsing = hooks.preParsing.length ? runHookList(hooks.preParsing, [ctx]) : undefined;
+      return isPromiseLike(parsing) ? Promise.resolve(parsing) : undefined;
+    });
+  }
+  return hooks.preParsing.length ? runHookList(hooks.preParsing, [ctx]) : undefined;
+}
+
+function runPreSerializationHooks(hooks: HookStore, ctx: Context, value: unknown): void | Promise<void> {
+  return hooks.preSerialization.length
+    ? runHookList(hooks.preSerialization, [ctx, value])
+    : undefined;
+}
+
+function runPreSendHooks(hooks: HookStore, ctx: Context, value: unknown): void | Promise<void> {
+  return hooks.preSend.length
+    ? runHookList(hooks.preSend, [ctx, value])
+    : undefined;
+}
+
+function attachResponseHooks(hooks: HookStore, ctx: Context): void {
+  if (!hooks.onResponse.length) return;
+  let finished = false;
+  const run = (): void => {
+    if (finished) return;
+    finished = true;
+    ctx.res.off('finish', run);
+    ctx.res.off('close', run);
+    try {
+      const result = runHookList(hooks.onResponse, [ctx]);
+      if (isPromiseLike(result)) void Promise.resolve(result).catch(() => {});
+    } catch {}
+  };
+  ctx.res.once('finish', run);
+  ctx.res.once('close', run);
+}
+
+function sendWithHooks(
+  hooks: HookStore,
+  ctx: Context,
+  value: unknown,
+  onFailure: (error: unknown) => void
+): void {
+  const prepare = (): void => {
+    let prepared;
+    try {
+      prepared = prepareResponse(ctx, value);
+    } catch (error) {
+      onFailure(error);
+      return;
+    }
+
+    let beforeSend: void | Promise<void>;
+    try {
+      beforeSend = runPreSendHooks(hooks, ctx, prepared.body);
+    } catch (error) {
+      onFailure(error);
+      return;
+    }
+
+    const finish = (): void => {
+      try {
+        sendPrepared(ctx, prepared);
+      } catch (error) {
+        onFailure(error);
+      }
+    };
+
+    if (isPromiseLike(beforeSend)) {
+      Promise.resolve(beforeSend).then(finish, onFailure);
+    } else {
+      finish();
+    }
+  };
+
+  let beforeSerialization: void | Promise<void>;
+  try {
+    beforeSerialization = runPreSerializationHooks(hooks, ctx, responseValue(ctx, value));
+  } catch (error) {
+    onFailure(error);
+    return;
+  }
+
+  if (isPromiseLike(beforeSerialization)) {
+    Promise.resolve(beforeSerialization).then(prepare, onFailure);
+  } else {
+    prepare();
+  }
+}
+
 export class OpenMesh {
   _root: OpenMesh;
   _parent: OpenMesh | null = null;
   _prefix = '';
   _middleware: Middleware[] = [];
+  _hooks: HookStore = hookStore();
   _pending: Array<{ plugin: PluginWithMetadata; options: PluginOptions }> = [];
   _names = new Set<string>();
   _routes: RouteRecord[] = [];
@@ -338,6 +555,17 @@ export class OpenMesh {
     return this.use(expressMiddleware(fn));
   }
 
+  addHook(name: 'postHandler' | 'preSerialization' | 'preSend', fn: ValueHook): this;
+  addHook(name: 'onError', fn: ErrorHook): this;
+  addHook(name: 'onRequest' | 'preParsing' | 'preValidation' | 'preHandler' | 'onResponse', fn: RequestHook): this;
+  addHook(name: HookName, fn: RequestHook | ValueHook | ErrorHook): this {
+    this._assertMutable();
+    if (!HOOK_NAMES.includes(name)) throw new TypeError('Unknown hook: ' + name);
+    if (typeof fn !== 'function') throw new TypeError(name + ' hook must be a function');
+    (this._hooks[name] as Array<RequestHook | ValueHook | ErrorHook>).push(fn);
+    return this;
+  }
+
   route(method: string, path: string, handler: Handler): this;
   route(method: string, path: string, options: RouteOptions, handler: Handler): this;
   route(method: string, path: string, optionsOrHandler: RouteOptions | Handler, maybeHandler?: Handler): this {
@@ -349,6 +577,7 @@ export class OpenMesh {
     if (typeof path !== 'string' || !path.startsWith('/')) throw new TypeError('Route path must be a string beginning with /');
     if (typeof method !== 'string' || !/^(\*|[A-Z]+)$/.test(method)) throw new TypeError('HTTP method must be uppercase or *');
     if (options.serializer !== undefined && typeof options.serializer !== 'function') throw new TypeError('Serializer must be a function');
+    validateHookOptions(options.hooks);
     if (options.schema !== undefined && (!options.schema || typeof options.schema !== 'object' || Array.isArray(options.schema))) {
       throw new TypeError('Route schema must be an object');
     }
@@ -366,6 +595,8 @@ export class OpenMesh {
       schema: options.schema || null,
       responseSerializers: null,
       middleware,
+      localHooks: options.hooks || null,
+      hooks: hookStore(),
       run: null,
       paramNames: []
     };
@@ -506,6 +737,7 @@ export class OpenMesh {
         scope._parent = this;
         scope._prefix = prefixPath(this._prefix, String(options.prefix || ''));
         scope._middleware = [];
+        scope._hooks = hookStore();
         scope._pending = [];
         scope._names = new Set();
       }
@@ -549,6 +781,7 @@ export class OpenMesh {
     for (const route of this._routes) {
       const middleware = [...inherited(route.scope, '_middleware'), ...route.middleware];
       const validators = compileRouteSchema(route);
+      route.hooks = compileHooks(route.scope, route.localHooks || undefined);
 
       if (route.responseSerializers) {
         route.serializer = (body, status = 200) => {
@@ -557,8 +790,28 @@ export class OpenMesh {
         };
       }
 
-      const invoke: Handler = validators.length
-        ? async ctx => { await validateRoute(ctx, validators); return route.handler(ctx); }
+      const hasHandlerHooks =
+        route.hooks.preValidation.length > 0 ||
+        route.hooks.preHandler.length > 0 ||
+        route.hooks.postHandler.length > 0;
+
+      const invoke: Handler = validators.length || hasHandlerHooks
+        ? async ctx => {
+            if (route.hooks.preValidation.length) {
+              await runHookList(route.hooks.preValidation, [ctx]);
+            }
+            if (validators.length) await validateRoute(ctx, validators);
+            if (route.hooks.preHandler.length) {
+              await runHookList(route.hooks.preHandler, [ctx]);
+            }
+
+            const value = await route.handler(ctx);
+
+            if (route.hooks.postHandler.length) {
+              await runHookList(route.hooks.postHandler, [ctx, value]);
+            }
+            return value;
+          }
         : route.handler;
 
       const handler: Handler = ctx => {
@@ -791,11 +1044,42 @@ export class OpenMesh {
     const queryIndex = url.indexOf('?');
     const path = queryIndex < 0 ? url : url.slice(0, queryIndex);
     let ctx: Context | undefined;
+    let hooks: HookStore = this._hooks;
+
+    const send = (value: unknown): void => {
+      const target = ctx!;
+      sendWithHooks(hooks, target, value, error => this._handleError(error, target, hooks));
+    };
+
+    const execute = (
+      route: RouteRecord | MountRecord | undefined,
+      notFound: NotFoundRecord | null
+    ): void => {
+      let result: unknown;
+      try {
+        result = route
+          ? (route as unknown as { run: Handler }).run(ctx!)
+          : notFound
+            ? notFound.run!(ctx!)
+            : this._fallback(ctx!);
+      } catch (error) {
+        this._handleError(error, ctx!, hooks);
+        return;
+      }
+
+      if (isPromiseLike(result)) {
+        Promise.resolve(result).then(send, error => this._handleError(error, ctx!, hooks));
+      } else {
+        send(result);
+      }
+    };
 
     try {
       const match = this._router.find(path, req.method || 'GET');
-      let route = match?.route;
-      if (!route) route = this._mounts.find(m => !m.prefix || path === m.prefix || path.startsWith(m.prefix + '/')) as unknown as RouteRecord | undefined;
+      let route: RouteRecord | MountRecord | undefined = match?.route;
+      if (!route) {
+        route = this._mounts.find(m => !m.prefix || path === m.prefix || path.startsWith(m.prefix + '/'));
+      }
 
       let notFound: NotFoundRecord | null = null;
       if (!route && !this._router.allowed(path).length) {
@@ -803,12 +1087,16 @@ export class OpenMesh {
       }
 
       const actualRoute = route && 'paramNames' in route ? route : null;
-      const scope = (route as unknown as MountRecord | undefined)?.scope || notFound?.scope || this;
+      const scope = route?.scope || notFound?.scope || this;
+      hooks = actualRoute?.hooks || compileHooks(scope, undefined);
+
       ctx = new Context(req, res, scope, path, actualRoute, match?.values || null);
       ctx.routePattern = actualRoute?.path
-        || ((route as unknown as MountRecord | undefined)?.prefix ?? null)
+        || (route && 'prefix' in route ? route.prefix : null)
         || notFound?.prefix
         || null;
+
+      attachResponseHooks(hooks, ctx);
 
       if (this._root._observer) {
         const started = performance.now();
@@ -836,26 +1124,21 @@ export class OpenMesh {
         this._emit({ type: 'request.start', at: Date.now(), method: req.method || 'GET', path, route: ctx.routePattern });
       }
 
-      const result = route
-        ? (route as unknown as { run: Handler }).run(ctx)
-        : notFound
-          ? notFound.run!(ctx)
-          : this._fallback(ctx);
-
-      if (isPromiseLike(result)) {
-        Promise.resolve(result).then(
-          value => { try { respond(ctx!, value); } catch (error) { this._handleError(error, ctx!); } },
-          error => this._handleError(error, ctx!)
+      const before = runBeforeRouteHooks(hooks, ctx);
+      if (isPromiseLike(before)) {
+        Promise.resolve(before).then(
+          () => execute(route, notFound),
+          error => this._handleError(error, ctx!, hooks)
         );
       } else {
-        respond(ctx, result);
+        execute(route, notFound);
       }
     } catch (error) {
-      this._handleError(error, ctx || new Context(req, res, this, path, null, null));
+      this._handleError(error, ctx || new Context(req, res, this, path, null, null), hooks);
     }
   }
 
-  _handleError(error: unknown, ctx: Context): void {
+  _handleError(error: unknown, ctx: Context, hooks: HookStore = this._hooks): void {
     const normalized = error instanceof Error ? error : new Error('Request failed', { cause: error });
     const observed = normalized as Error & { code?: string; statusCode?: number };
     this._emit({
@@ -867,6 +1150,23 @@ export class OpenMesh {
       ...(observed.code ? { code: observed.code } : {}),
       ...(Number.isInteger(observed.statusCode) ? { statusCode: observed.statusCode } : {})
     });
+
+    const proceed = (): void => this._handleErrorAfterHooks(normalized, ctx, hooks);
+
+    if (hooks.onError.length) {
+      try {
+        const value = runHookList(hooks.onError, [normalized, ctx]);
+        if (isPromiseLike(value)) {
+          Promise.resolve(value).then(proceed, proceed);
+          return;
+        }
+      } catch {}
+    }
+
+    proceed();
+  }
+
+  _handleErrorAfterHooks(normalized: Error, ctx: Context, hooks: HookStore): void {
     if (ctx.res.writableEnded || ctx.res.destroyed) return;
     if (ctx.res.headersSent) {
       ctx.res.destroy(normalized);
@@ -876,15 +1176,16 @@ export class OpenMesh {
     ctx.body = undefined;
     const handler = ctx.app._errorHandler;
     if (handler) {
+      const sendHandled = (value: unknown): void => {
+        sendWithHooks(hooks, ctx, value, failure => this._defaultError(failure, ctx));
+      };
+
       try {
         const result = handler(normalized, ctx);
         if (isPromiseLike(result)) {
-          Promise.resolve(result).then(
-            value => { try { respond(ctx, value); } catch (failure) { this._defaultError(failure, ctx); } },
-            failure => this._defaultError(failure, ctx)
-          );
+          Promise.resolve(result).then(sendHandled, failure => this._defaultError(failure, ctx));
         } else {
-          respond(ctx, result);
+          sendHandled(result);
         }
         return;
       } catch (failure) {

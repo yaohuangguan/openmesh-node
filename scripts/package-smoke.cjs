@@ -59,6 +59,7 @@ try {
   const subpaths = [
     'openmesh-node',
     'openmesh-node/plugins',
+    'openmesh-node/http',
     'openmesh-node/mesh',
     'openmesh-node/services',
     'openmesh-node/services/testing',

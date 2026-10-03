@@ -1,5 +1,6 @@
 import openmesh, { definePlugin, HttpError, type AppEvent, type Context } from 'openmesh-node';
-import { jsonBody, requestContext, health } from 'openmesh-node/plugins';
+import { jsonBody, bodyParser, textBody, rawBody, formBody, multipartBody, requestContext, health } from 'openmesh-node/plugins';
+import { POST, pipe, input, returns, implement, created, ok, api, type StandardSchemaV1 } from 'openmesh-node/http';
 import { PeerPool, type PeerPoolEvent, type PeerPoolStats, type PeerSelectionStrategy } from 'openmesh-node/mesh';
 import { ControlClient, controlPlane, serviceRegistration, ConfigStore, ServiceRegistry, type ControlCredential, type ControlPlaneInfo } from 'openmesh-node/services';
 import { createOpenTelemetryObservers, type OpenTelemetryMeter } from 'openmesh-node/otel';
@@ -70,3 +71,69 @@ const typedRedisRegistry = new RedisRegistryAdapter({ client: typedRedisClient, 
 const typedRedisConfig = new RedisConfigAdapter({ client: typedRedisClient, prefix: 'openmesh-types' });
 void typedRedisRegistry;
 void typedRedisConfig;
+
+
+function standard<T>(): StandardSchemaV1<unknown, T> {
+  return null as unknown as StandardSchemaV1<unknown, T>;
+}
+
+const NewUserContract = standard<{ name: string }>();
+const UserContract = standard<{ id: string; name: string }>();
+
+const createUserContract = pipe(
+  POST('/users/:id'),
+  input({ body: NewUserContract }),
+  returns({ 201: UserContract })
+);
+
+const createUserFunctional = implement(createUserContract, async ({ body, params }) => {
+  const name: string = body.name;
+  const id: string = params.id;
+  return created({ id, name });
+});
+
+openmesh()
+  .use(bodyParser())
+  .use(textBody({ types: ['text/*'] }))
+  .use(rawBody({ types: ['application/octet-stream'] }))
+  .use(formBody())
+  .use(multipartBody())
+  .register(api('/api', createUserFunctional));
+
+// @ts-expect-error response status 200 is not declared by the contract
+implement(createUserContract, async ({ body, params }) => ok({ id: params.id, name: body.name }));
+
+// @ts-expect-error response body does not satisfy the declared User contract
+implement(createUserContract, async ({ body }) => created({ id: 123, name: body.name }));
+
+
+const createUserWithProvider = implement(createUserContract, {
+  provide: {
+    actor: async ({ headers }) => {
+      const authorization: string | string[] | undefined = headers.authorization;
+      void authorization;
+      return { id: 'actor-1', role: 'admin' as const };
+    }
+  },
+  run: async ({ body, params, actor }) => {
+    const actorId: string = actor.id;
+    const role: 'admin' = actor.role;
+    void actorId;
+    void role;
+    return created({ id: params.id, name: body.name });
+  }
+});
+
+openmesh().register(api(createUserWithProvider));
+
+
+openmesh()
+  .addHook('onRequest', ctx => { const method: string | undefined = ctx.method; void method; })
+  .addHook('preParsing', ctx => { void ctx.requestBody; })
+  .addHook('preValidation', ctx => { void ctx.params; })
+  .addHook('preHandler', ctx => { void ctx.query; })
+  .addHook('postHandler', (ctx, value) => { void ctx.status; void value; })
+  .addHook('preSerialization', (ctx, value) => { void ctx.body; void value; })
+  .addHook('preSend', (ctx, value) => { void ctx.response; void value; })
+  .addHook('onResponse', ctx => { void ctx.status; })
+  .addHook('onError', (error, ctx) => { const message: string = error.message; void message; void ctx.path; });

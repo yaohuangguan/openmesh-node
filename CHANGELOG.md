@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 (unreleased)
+
+- Add a preview functional HTTP API under `openmesh-node/http`: immutable route contracts, `pipe()`, Standard Schema input/output inference, typed reply values, and contract-first `implement()`.
+- Keep route typing local instead of accumulating one whole-application generic; `api()` preserves route values for future typed-client/OpenAPI tooling.
+- Add typed implementation providers so authentication/tenancy/request-scoped dependencies flow into handlers without `ctx.state` casts.
+- Add complete HTTP lifecycle hooks: `onRequest`, `preParsing`, `preValidation`, `preHandler`, `postHandler`, `preSerialization`, `preSend`, `onResponse`, and `onError`, with plugin-scope and route-level composition.
+- Expand body parsing plugins with universal `bodyParser()` plus JSON, text, raw, URL-encoded form, and buffered multipart parsers with explicit size limits.
+- Add functional CRUD/runtime tests, lifecycle-order tests, TypeScript negative tests for response contracts, and packed-package coverage for `openmesh-node/http`.
+
 ## 0.4.0 - 2026-10-03
 
 - Add request/server lifecycle observability tied to actual response finish/close events, including streaming responses.
