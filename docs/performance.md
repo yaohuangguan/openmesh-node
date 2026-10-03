@@ -1,6 +1,8 @@
 # Performance reports
 
-## Release benchmark — 0.4.0
+> **Current package: OpenMesh 0.5.0.** The latest preserved dedicated release benchmark below is from 0.4.0. No new 0.5 release-level benchmark is claimed here; CI continues to run normalized OpenMesh/Fastify regression checks on the current code.
+
+## Latest preserved release benchmark — 0.4.0
 
 Measured on 2026-10-03 with Node v24.18.0 on macOS 24.6.0 (Intel Core i5-8279U, 8 logical CPUs). Each workload uses three 3-second measured rounds, a 1-second warmup, 32 connections, pipelining 1, one load-generator worker, and separate server processes. OpenMesh 0.4.0 is compared with Fastify 5.12.5 on the same machine.
 
@@ -91,7 +93,7 @@ npm run bench -- --duration=10 --rounds=5 --connections=64 --output=results/my-m
 
 ## CI regression budget
 
-OpenMesh 0.4 adds a dedicated Ubuntu / Node 24 benchmark job. It does **not** compare GitHub-hosted runner throughput with the checked-in Windows workstation numbers above. Instead it runs OpenMesh and Fastify in the same job and evaluates normalized ratios from the same machine.
+The current CI pipeline includes a dedicated Ubuntu / Node 24 benchmark-regression job. It does **not** compare GitHub-hosted runner throughput with the checked-in Windows workstation numbers above. Instead it runs OpenMesh and Fastify in the same job and evaluates normalized ratios from the same machine.
 
 The guard currently checks:
 

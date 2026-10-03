@@ -1,5 +1,7 @@
 # Native engine investigation: Go
 
+> **Historical experiment from the 0.2 era.** OpenMesh 0.5 remains a Node.js application-native runtime. This document is retained as measurement evidence for why a Go sidecar/proxy was not adopted into the request path.
+
 ## Decision for 0.2.0
 
 Keep the released engine on Node HTTP. Include an independent Go experiment and raw measurements, but do not ship an unproven Go-to-JavaScript transport as the default runtime.

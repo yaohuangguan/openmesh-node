@@ -1,5 +1,7 @@
 # Observability
 
+This document describes the 0.5 observability boundary. See [OpenMesh 0.5 architecture](architecture-0.5.md) for how telemetry fits into the application-native runtime.
+
 OpenMesh keeps observability exporter-neutral in the runtime. Application and peer lifecycle events are emitted only when an observer is configured.
 
 ## OpenTelemetry metrics bridge

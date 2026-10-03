@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="OpenMesh 0.5 documentation: native HTTP, typed routes, databases, application-native mesh, traffic policy, workload identity, control plane and observability." />
+    <meta name="theme-color" content="#05070a" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenMesh Docs — 0.5" />
+    <meta property="og:description" content="Build a Node.js API, then grow it into an application-native service mesh without changing programming models." />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>OpenMesh Docs — 0.5</title>
+    <script type="module" src="/src/docs.ts"></script>
+  </head>
+  <body>
+    <header class="docs-topbar">
+      <a class="brand" href="/" aria-label="OpenMesh home">
+        <span class="brand-glyph" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>OpenMesh</span>
+      </a>
+      <div class="docs-version">docs <strong>0.5</strong></div>
+      <nav>
+        <a href="/">Overview</a>
+        <a href="https://github.com/yaohuangguan/openmesh-node">GitHub ↗</a>
+      </nav>
+    </header>
+
+    <div class="docs-shell">
+      <aside class="docs-sidebar">
+        <div class="sidebar-group">
+          <span>Start</span>
+          <a href="#overview" class="active">Overview</a>
+          <a href="#quickstart">Quickstart</a>
+          <a href="#package-map">Package map</a>
+        </div>
+        <div class="sidebar-group">
+          <span>Application</span>
+          <a href="#http">HTTP + contracts</a>
+          <a href="#database">Database lifecycle</a>
+          <a href="#mesh">Application-native mesh</a>
+        </div>
+        <div class="sidebar-group">
+          <span>Distributed runtime</span>
+          <a href="#traffic">Traffic policy</a>
+          <a href="#identity">Identity + mTLS</a>
+          <a href="#control-plane">Control plane</a>
+          <a href="#observability">Observability</a>
+        </div>
+        <div class="sidebar-group">
+          <span>Deep dives</span>
+          <a href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/architecture-0.5.md">0.5 architecture ↗</a>
+          <a href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/mesh-runtime.md">Mesh runtime ↗</a>
+          <a href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/api.md">API reference ↗</a>
+        </div>
+      </aside>
+
+      <main class="docs-main">
+        <section id="overview" class="docs-hero">
+          <div class="eyebrow"><span></span> OpenMesh 0.5 documentation</div>
+          <h1>Start as an API.<br /><em>Grow into a mesh.</em></h1>
+          <p>
+            OpenMesh is a TypeScript service runtime for Node.js. Use the native HTTP runtime
+            by itself, add your existing database client, then turn on discovery, traffic policy,
+            workload identity and service-to-service calls only when the application needs them.
+          </p>
+          <div class="hero-actions">
+            <a class="primary" href="#quickstart">Build the first service ↓</a>
+            <a href="https://www.npmjs.com/package/openmesh-node">npm package ↗</a>
+          </div>
+          <div class="status-strip">
+            <span><b>0.5.0</b> current</span>
+            <span>Node.js ≥ 22</span>
+            <span>ESM + CommonJS</span>
+            <span>strict TypeScript</span>
+          </div>
+        </section>
+
+        <section class="docs-section" id="quickstart">
+          <div class="section-label">01 / quickstart</div>
+          <h2>A useful service in five minutes.</h2>
+          <p class="lead">
+            The default path is ordinary HTTP. No sidecar, controller class or custom query layer is required.
+          </p>
+
+          <div class="install-box">
+            <code>npm install openmesh-node</code>
+            <button type="button" data-copy="npm install openmesh-node">copy</button>
+          </div>
+
+          <div class="code-card">
+            <div class="code-head"><span>server.ts</span><button type="button" data-copy-target="#quick-code">copy</button></div>
+            <pre id="quick-code"><code>import openmesh, { created } from 'openmesh-node';
+import { bodyParser } from 'openmesh-node/plugins';
+
+const app = openmesh();
+
+app.use(bodyParser());
+
+app.post('/users/:id', {
+  body: NewUser,
+  response: {
+    201: User,
+    409: Problem
+  }
+}, async ({ body, params }) =&gt; {
+  return created(await users.create({
+    id: params.id,
+    ...body
+  }));
+});
+
+await app.listen({ port: 3000 });</code></pre>
+          </div>
+
+          <div class="callout">
+            <strong>What OpenMesh is doing here</strong>
+            <p>Routing, body parsing, Standard Schema validation, typed response contracts and graceful lifecycle all stay inside the Node.js process.</p>
+          </div>
+        </section>
+
+        <section class="docs-section" id="package-map">
+          <div class="section-label">02 / package map</div>
+          <h2>Use only the layer you need.</h2>
+          <div class="package-grid">
+            <article><code>openmesh-node</code><strong>Application runtime</strong><p>HTTP, routing, lifecycle, typed route shorthand and application mesh facade.</p></article>
+            <article><code>openmesh-node/plugins</code><strong>Request plugins</strong><p>Body parsers, health checks and ecosystem integration points.</p></article>
+            <article><code>openmesh-node/db</code><strong>Database lifecycle</strong><p>Keep Prisma, Drizzle, Kysely, TypeORM or your existing client API.</p></article>
+            <article><code>openmesh-node/mesh</code><strong>Peer data plane</strong><p>Peer selection, admission, deadlines, retries, circuits and streams.</p></article>
+            <article><code>openmesh-node/services</code><strong>Control plane</strong><p>Registration, discovery, config snapshots, watches and managed pools.</p></article>
+            <article><code>openmesh-node/otel</code><strong>Metrics bridge</strong><p>OpenTelemetry-compatible metrics without coupling core to the SDK.</p></article>
+          </div>
+        </section>
+
+        <section class="docs-section" id="http">
+          <div class="section-label">03 / application HTTP</div>
+          <h2>Typed contracts without framework ceremony.</h2>
+          <p class="lead">
+            OpenMesh 0.5 adds Standard Schema input inference and response contracts directly to
+            <code>app.get/post/...</code>. The advanced functional contract API remains optional.
+          </p>
+          <div class="feature-split">
+            <div>
+              <h3>Default route API</h3>
+              <ul>
+                <li>typed body, params, query and headers</li>
+                <li>runtime validation and transformation</li>
+                <li>compile-time response status/body contracts</li>
+                <li>complete HTTP lifecycle hooks</li>
+                <li>JSON, text, raw, form and multipart parsing</li>
+              </ul>
+            </div>
+            <div>
+              <h3>Advanced contract API</h3>
+              <p>Use <code>openmesh-node/http</code> when routes need to exist as immutable values for tooling, client generation, policy inspection or contract-first tests.</p>
+              <a class="text-link" href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/functional-http.md">Advanced HTTP contracts ↗</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="docs-section" id="database">
+          <div class="section-label">04 / database lifecycle</div>
+          <h2>Your ORM remains your ORM.</h2>
+          <p class="lead">
+            <code>openmesh-node/db</code> does not invent a query language. It gives your existing client application lifecycle, readiness and an optional typed transaction boundary.
+          </p>
+          <div class="code-card">
+            <div class="code-head"><span>database.ts</span><button type="button" data-copy-target="#db-code">copy</button></div>
+            <pre id="db-code"><code>import { database } from 'openmesh-node/db';
+
+const db = database(prisma, {
+  name: 'primary',
+  connect: client =&gt; client.$connect(),
+  disconnect: client =&gt; client.$disconnect(),
+  transaction: (client, work) =&gt; client.$transaction(work)
+});
+
+app.register(db);
+
+app.get('/users', async () =&gt; db.client.user.findMany());</code></pre>
+          </div>
+          <a class="text-link" href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/database.md">Prisma, Drizzle, Kysely, TypeORM and lifecycle details ↗</a>
+        </section>
+
+        <section class="docs-section" id="mesh">
+          <div class="section-label">05 / application-native mesh</div>
+          <h2>The service relationship becomes runtime state.</h2>
+          <p class="lead">
+            Configure the application once, then use lazy <code>app.mesh(name)</code> handles.
+            The first real call creates one managed service pool and reuses its discovery, pressure and failure state.
+          </p>
+          <div class="code-card">
+            <div class="code-head"><span>gateway.ts</span><button type="button" data-copy-target="#mesh-code">copy</button></div>
+            <pre id="mesh-code"><code>const app = openmesh({
+  service: 'gateway',
+  mesh: {
+    control: {
+      url: process.env.OPENMESH_CONTROL_URL!,
+      token: process.env.OPENMESH_TOKEN!
+    }
+  }
+});
+
+const payments = app.mesh('payments');
+
+const charge = await payments.post('/charges', {
+  key: user.id,
+  body: { userId: user.id, amount: order.total }
+});</code></pre>
+          </div>
+          <div class="pipeline">
+            <span>discovery</span><i>→</i><span>traffic target</span><i>→</i><span>peer selection</span><i>→</i><span>admission</span><i>→</i><span>deadline + retry</span><i>→</i><span>transport</span>
+          </div>
+          <a class="text-link" href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/mesh-runtime.md">Application-native mesh deep dive ↗</a>
+        </section>
+
+        <section class="docs-section" id="traffic">
+          <div class="section-label">06 / traffic policy</div>
+          <h2>Choose the subset before choosing the peer.</h2>
+          <p class="lead">
+            0.5 separates traffic targeting from peer selection. That keeps canaries, regional failover and affinity composable with the same retries, circuits and concurrency controls.
+          </p>
+          <div class="capability-grid">
+            <article><strong>Header routes</strong><p>Ordered rules can select a subset from inbound request metadata without blindly forwarding those headers.</p></article>
+            <article><strong>Weighted subsets</strong><p>Split traffic across version/metadata groups. A request key keeps weighted selection sticky.</p></article>
+            <article><strong>Locality failover</strong><p>Prefer zones or regions in order, then move outward only when eligible local peers are unavailable.</p></article>
+            <article><strong>Live policy</strong><p>Control-plane config revisions can replace traffic policy without rebuilding the service pool or restarting the process.</p></article>
+          </div>
+        </section>
+
+        <section class="docs-section" id="identity">
+          <div class="section-label">07 / workload identity</div>
+          <h2>mTLS identity belongs to the application boundary.</h2>
+          <p class="lead">
+            A service can bind itself to a SPIFFE-style identity. OpenMesh validates the local certificate before startup,
+            requires authenticated inbound peers and verifies the expected service identity on outbound mesh calls.
+          </p>
+          <div class="code-card">
+            <div class="code-head"><span>identity.ts</span><button type="button" data-copy-target="#identity-code">copy</button></div>
+            <pre id="identity-code"><code>const payments = openmesh({
+  service: 'payments',
+  identity: {
+    trustDomain: 'mesh.example.internal',
+    ca,
+    cert,
+    key,
+    allow: ['gateway']
+  }
+});
+
+// Expected URI SAN:
+// spiffe://mesh.example.internal/service/payments</code></pre>
+          </div>
+          <div class="callout">
+            <strong>Rotation without process restart</strong>
+            <p><code>app.workload.rotate(...)</code> swaps the inbound secure context for new connections and rotates outbound mesh TLS agents with an optional drain grace period.</p>
+          </div>
+        </section>
+
+        <section class="docs-section" id="control-plane">
+          <div class="section-label">08 / control plane</div>
+          <h2>Versioned state, push-first delivery.</h2>
+          <p class="lead">
+            Registration leases, membership revisions and configuration epoch + revision make distributed state changes explicit.
+            Authenticated SSE watches are the steady-state path; polling remains a compatibility fallback.
+          </p>
+          <div class="control-table">
+            <div><span>registration</span><strong>lease ownership + heartbeat + pre-drain removal</strong></div>
+            <div><span>discovery</span><strong>full membership snapshots + monotonic revisions</strong></div>
+            <div><span>configuration</span><strong>immutable snapshots + epoch/revision CAS</strong></div>
+            <div><span>authorization</span><strong>scoped credentials by action, service and namespace</strong></div>
+            <div><span>durability</span><strong>Redis adapters or your own adapter implementation</strong></div>
+          </div>
+          <a class="text-link" href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/services.md">Control-plane protocol and adapters ↗</a>
+        </section>
+
+        <section class="docs-section" id="observability">
+          <div class="section-label">09 / observability</div>
+          <h2>Instrumentation is opt-in, not baked into the hot path.</h2>
+          <p class="lead">
+            Application and peer lifecycle events are emitted only when observers are configured. The OpenTelemetry bridge consumes those events without making the SDK a core runtime dependency.
+          </p>
+          <div class="capability-grid">
+            <article><strong>Inbound lifecycle</strong><p>request start, finish, error and actual response completion.</p></article>
+            <article><strong>Peer lifecycle</strong><p>attempt, success, failure, cancellation, queue pressure and adaptive limit changes.</p></article>
+            <article><strong>Trace context</strong><p>request IDs and W3C <code>traceparent</code> propagate through AsyncLocalStorage and mesh calls.</p></article>
+            <article><strong>Bounded attributes</strong><p>the metrics bridge avoids raw paths, bodies, tokens and arbitrary high-cardinality values.</p></article>
+          </div>
+          <a class="text-link" href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/observability.md">Observability reference ↗</a>
+        </section>
+
+        <section class="docs-section deep-links">
+          <div class="section-label">10 / deeper documentation</div>
+          <h2>Go deeper where the boundary matters.</h2>
+          <div class="link-grid">
+            <a href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/architecture-0.5.md"><strong>0.5 architecture</strong><span>How the HTTP runtime, database resources, mesh, identity and control plane fit together.</span></a>
+            <a href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/mesh-runtime.md"><strong>Application-native mesh</strong><span>Service handles, traffic targets, identity, rotation and failure semantics.</span></a>
+            <a href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/distributed.md"><strong>Peer data plane</strong><span>Selection, admission, deadlines, retries, circuits, streaming and TLS profiles.</span></a>
+            <a href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/services.md"><strong>Services + control plane</strong><span>Protocol, registration, watches, configuration, Redis and adapter contracts.</span></a>
+            <a href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/database.md"><strong>Databases + ORMs</strong><span>Lifecycle patterns for Prisma, Drizzle, Kysely, TypeORM, MikroORM and Sequelize.</span></a>
+            <a href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/api.md"><strong>API reference</strong><span>Public runtime and lower-level APIs.</span></a>
+          </div>
+        </section>
+
+        <footer class="docs-footer">
+          <span>OpenMesh 0.5.0 · MIT</span>
+          <div><a href="https://www.npmjs.com/package/openmesh-node">npm</a><a href="https://github.com/yaohuangguan/openmesh-node">source</a><a href="https://github.com/yaohuangguan/openmesh-node/blob/master/CHANGELOG.md">changelog</a></div>
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>

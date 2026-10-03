@@ -1,4 +1,4 @@
-# Advanced HTTP Contracts — 0.5 preview
+# Advanced HTTP Contracts — 0.5
 
 > **Optional advanced API: routes are values.**
 
@@ -239,7 +239,7 @@ multipartBody();
 
 All parsers are bounded by size limits. JSON keeps prototype-key protection. URL-encoded and multipart objects use safe own-property handling.
 
-The 0.5 preview multipart parser is buffered and intended for ordinary API forms. A future streaming multipart plugin should handle large file uploads without changing the base parser contract.
+The 0.5 multipart parser is buffered and intended for ordinary API forms. A future streaming multipart plugin should handle large file uploads without changing the base parser contract.
 
 ## A CRUD API without controller classes
 

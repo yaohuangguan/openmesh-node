@@ -1,5 +1,7 @@
 # Native API
 
+This reference describes the current OpenMesh 0.5 public runtime surface. For the system-level model, see [OpenMesh 0.5 architecture](architecture-0.5.md).
+
 The core uses Node built-ins. Configure routes and plugins before startup; `ready()` boots plugins and `listen()` binds the HTTP listener.
 
 ## Application
@@ -46,6 +48,31 @@ const app = openmesh({
 
 Database and ORM clients are intentionally outside the core HTTP object model. Use `database(client, options)` from `openmesh-node/db` to bind an existing client to application startup/shutdown, readiness and optional transaction semantics while preserving that client's native API and TypeScript type. See [`database.md`](database.md).
 
+## Application-native mesh
+
+OpenMesh 0.5 adds the high-level service facade directly to the application:
+
+```ts
+const app = openmesh({
+  service: 'gateway',
+  mesh: {
+    control: {
+      url: process.env.OPENMESH_CONTROL_URL!,
+      token: process.env.OPENMESH_TOKEN!
+    }
+  }
+});
+
+const users = app.mesh('users');
+const user = await users.get<User>('/users/42', { key: '42' });
+```
+
+`app.mesh(name)` returns one lazy logical service handle. The first real call creates the underlying managed service pool and discovery watch; later calls reuse its admission, circuit, traffic-policy, telemetry, and transport state.
+
+The high-level helpers are `get`, `post`, `put`, `patch`, and `delete`. Successful payloads are parsed automatically. `request()` and `stream()` remain available as lower-level escape hatches. Non-2xx high-level calls surface `MeshHttpError` after OpenMesh has applied the configured retry/peer semantics.
+
+When the root application has `identity` configured, outbound mesh calls automatically present the local workload certificate and verify the destination SPIFFE-style service identity. See [`mesh-runtime.md`](mesh-runtime.md).
+
 `onEvent` is an optional zero-dependency observability hook. It receives request start/finish/error and server listening/closing/closed events. Request finish timing follows the real Node response `finish` / `close` lifecycle, so streamed responses are measured until bytes actually complete. Observer exceptions are isolated from request processing; enqueue telemetry work instead of doing blocking I/O in the callback. With no observer configured, OpenMesh skips per-request timing and response lifecycle listeners so the default request path does not pay observability overhead.
 
 Routes are case-sensitive and trailing slashes are significant. Static routes take precedence over parameters, then wildcards. Parameter values decode when accessed. A terminal wildcard, `/files/*`, captures the remainder in `ctx.params['*']`. Regex routes and optional parameters are not supported. Duplicate method/path registrations fail at configuration time.
@@ -55,7 +82,7 @@ HEAD falls back to GET with its body suppressed. A matching path with another me
 
 ## Route schemas
 
-OpenMesh 0.3 exposes compiler contracts without bundling a schema library. A scope can provide validator and serializer compilers, then routes can declare body/query/params/header and response schemas.
+OpenMesh exposes compiler contracts without bundling a schema library. A scope can provide validator and serializer compilers, then routes can declare body/query/params/header and response schemas.
 
 ```js
 app.setValidatorCompiler(({ schema, httpPart }) => {
@@ -117,16 +144,16 @@ Without a custom handler, 4xx `HttpError` messages are exposed and 5xx responses
 ## Built-in plugins
 
 ```js
-import { jsonBody, requestContext, health } from 'openmesh-node/plugins';
-app.use(jsonBody({ limit: 1024 * 1024, prototypeAction: 'error' }));
+import { bodyParser, requestContext, health } from 'openmesh-node/plugins';
+app.use(bodyParser({ limit: 1024 * 1024, prototypeAction: 'error' }));
 app.use(requestContext({ service: 'users', requestIdHeader: 'x-request-id' }));
 app.register(health({ ready: async () => database.isConnected() }));
 ```
 
-`jsonBody` parses JSON/+json POST, PUT, PATCH and DELETE requests. Invalid JSON returns 400; over-limit bodies return 413. By default it rejects `__proto__` and `constructor` keys to reduce prototype-pollution hazards in downstream code. Set `prototypeAction: 'remove'` to strip those keys or `'ignore'` only when the application intentionally accepts them. It does not parse forms, multipart uploads, compressed payloads, or validate application schemas.
+`bodyParser()` is the 0.5 default parser for JSON / `+json`, URL-encoded forms, buffered multipart, text, and raw payloads with explicit limits. JSON keeps prototype-key protection. The format-specific `jsonBody()`, `formBody()`, `multipartBody()`, `textBody()`, and `rawBody()` plugins remain available when an application wants a narrower parser. Body parsing does not replace application schema validation.
 
 `requestContext` validates or generates a request ID, carries a valid version-00 trace ID forward, and generates a new span ID. It sets response headers and `ctx.state.outboundHeaders` for explicit propagation.
 
-The same request state is also stored with Node `AsyncLocalStorage`, so deep async code can call `currentRequestContext()` without receiving `ctx` as an argument. The store is request-scoped and returns `null` outside a request. This remains the context propagation boundary. OpenMesh 0.4 adds exporter-neutral lifecycle events but still does not create/export OpenTelemetry spans itself or carry `tracestate`/baggage.
+The same request state is also stored with Node `AsyncLocalStorage`, so deep async code can call `currentRequestContext()` without receiving `ctx` as an argument. The store is request-scoped and returns `null` outside a request. This remains the context propagation boundary. OpenMesh 0.5 keeps exporter-neutral lifecycle events and automatic request-id / `traceparent` propagation through application-native mesh calls, but core still does not create/export OpenTelemetry spans or carry `tracestate`/baggage.
 
 `health` registers `/health/live` and `/health/ready`; readiness returns 200 or 503 from the supplied callback. It describes the application's readiness policy, rather than actively probing all peers.
