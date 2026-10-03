@@ -58,12 +58,13 @@ jobs:
         shell: bash
         run: |
           VERSION="$(node -p "require('./package.json').version")"
-          for attempt in 1 2 3 4 5; do
-            if RESULT="$(npm view "openmesh-node@$VERSION" version dist.integrity --json 2>/dev/null)"; then
+          for attempt in $(seq 1 36); do
+            if RESULT="$(npm view "openmesh-node@$VERSION" version dist.integrity --json --prefer-online 2>/dev/null)"; then
               echo "$RESULT"
               exit 0
             fi
-            sleep 3
+            echo "Registry propagation pending (attempt $attempt/36)"
+            sleep 5
           done
-          echo "Published package was not visible from the registry"
+          echo "Published package was not visible from the registry after 3 minutes"
           exit 1
