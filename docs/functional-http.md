@@ -320,7 +320,7 @@ That is the larger OpenMesh story:
 
 ## Preview status
 
-The functional HTTP API is being developed for OpenMesh 0.5 and is not part of the published 0.4.0 API.
+The functional HTTP API ships with OpenMesh 0.5 as an optional advanced contract surface; the simpler typed `app.get/post/put/patch/delete` API remains the default CRUD path.
 
 The preview currently includes:
 
