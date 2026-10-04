@@ -1,0 +1,80 @@
+name: Mesh benchmark
+
+on:
+  pull_request:
+    paths:
+      - 'benchmarks/mesh/**'
+      - '.github/workflows/mesh-benchmark.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'src/mesh/**'
+      - 'src/services/**'
+      - 'website/**'
+  push:
+    branches: [master]
+    paths:
+      - 'benchmarks/mesh/**'
+      - '.github/workflows/mesh-benchmark.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'src/mesh/**'
+      - 'src/services/**'
+      - 'website/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mesh-data-plane:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Run OpenMesh vs Envoy mesh benchmark
+        run: >
+          npm run bench:mesh -- --duration=2 --rounds=2 --connections=32
+          --envoy-image=envoyproxy/envoy:v1.31-latest
+          --output=benchmarks/results/mesh-ci.json
+      - name: Render benchmark summary
+        if: always()
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const file = 'benchmarks/results/mesh-ci.json';
+          if (!fs.existsSync(file)) process.exit(0);
+          const report = JSON.parse(fs.readFileSync(file, 'utf8'));
+          const lines = [
+            '| Scenario | Data plane | Median req/s | p50 | p99 | Errors |',
+            '| --- | --- | ---: | ---: | ---: | ---: |'
+          ];
+          for (const row of report.summary || []) {
+            lines.push(
+              `| ${row.scenario} | ${row.framework} | ${Math.round(row.medianRps)} | ${row.medianP50Ms.toFixed(2)} ms | ${row.medianP99Ms.toFixed(2)} ms | ${Math.round(row.medianErrors)} |`
+            );
+          }
+          const failure = (report.summary || []).filter(row => row.scenario === 'failure-30pct');
+          if (failure.length) {
+            lines.push('');
+            lines.push('| Failure recovery | Error rate after injection | Last observed error |');
+            lines.push('| --- | ---: | ---: |');
+            for (const row of failure) {
+              lines.push(
+                `| ${row.framework} | ${(row.medianErrorRateAfterInjection * 100).toFixed(3)}% | +${Math.round(row.medianLastErrorAfterInjectionMs)} ms |`
+              );
+            }
+          }
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
+          NODE
+      - name: Upload mesh benchmark report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mesh-benchmark-node24-ubuntu
+          path: benchmarks/results/mesh-ci.json
