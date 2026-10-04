@@ -402,7 +402,8 @@ async function startEnvoy(targets) {
   } catch (error) {
     let diagnostics = '';
     for (const name of [outboundName, inboundName]) {
-      try { diagnostics += '\n[' + name + ' state]\n' + docker('inspect', '-f', '{{json .State}}', name); } catch {}\n      try { diagnostics += '\n[' + name + ' logs]\n' + docker('logs', name); } catch {}
+      try { diagnostics += '\n[' + name + ' state]\n' + docker('inspect', '-f', '{{json .State}}', name); } catch {}
+      try { diagnostics += '\n[' + name + ' logs]\n' + docker('logs', name); } catch {}
     }
     for (const name of [outboundName, inboundName]) {
       try { docker('rm', '-f', name); } catch {}
