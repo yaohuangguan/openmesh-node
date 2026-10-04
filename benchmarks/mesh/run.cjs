@@ -375,9 +375,14 @@ async function startEnvoy(targets) {
       '-c', '/etc/envoy/envoy.yaml', '--log-level', 'error');
     await waitHttp(outboundPort);
   } catch (error) {
-    try { docker('logs', inboundName); } catch {}
-    try { docker('rm', '-f', inboundName); } catch {}
-    throw error;
+    let diagnostics = '';
+    for (const name of [outboundName, inboundName]) {
+      try { diagnostics += '\n[' + name + ']\n' + docker('logs', name); } catch {}
+    }
+    for (const name of [outboundName, inboundName]) {
+      try { docker('rm', '-f', name); } catch {}
+    }
+    throw new Error(error.message + diagnostics);
   }
 
   return {
