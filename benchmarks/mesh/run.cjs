@@ -380,7 +380,8 @@ async function startEnvoy(targets) {
   }
 
   const outboundPort = await freePort();
-  const inboundPort = await freePort();
+  let inboundPort = await freePort();
+  while (inboundPort === outboundPort) inboundPort = await freePort();
   const temp = await fsp.mkdtemp(path.join(os.tmpdir(), 'openmesh-envoy-'));
   const inboundConfig = path.join(temp, 'inbound.yaml');
   const outboundConfig = path.join(temp, 'outbound.yaml');
