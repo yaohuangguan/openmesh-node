@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const http = require('node:http');
+const https = require('node:https');
 const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
@@ -57,24 +58,77 @@ async function freePort() {
   return port;
 }
 
-async function startTargets(count) {
+async function createTlsMaterial() {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'openmesh-mesh-tls-'));
+  const run = (...command) => execFileSync('openssl', command, { stdio: ['ignore', 'pipe', 'pipe'] });
+  const caKey = path.join(dir, 'ca.key');
+  const caCert = path.join(dir, 'ca.crt');
+
+  run('ecparam', '-name', 'prime256v1', '-genkey', '-noout', '-out', caKey);
+  run('req', '-x509', '-new', '-key', caKey, '-sha256', '-days', '2',
+    '-subj', '/CN=OpenMesh Mesh Benchmark CA', '-out', caCert);
+
+  async function issue(name, uri) {
+    const key = path.join(dir, name + '.key');
+    const csr = path.join(dir, name + '.csr');
+    const cert = path.join(dir, name + '.crt');
+    const ext = path.join(dir, name + '.ext');
+    await fsp.writeFile(ext, 'subjectAltName=URI:' + uri + '\nextendedKeyUsage=serverAuth,clientAuth\n');
+    run('ecparam', '-name', 'prime256v1', '-genkey', '-noout', '-out', key);
+    run('req', '-new', '-key', key, '-subj', '/CN=' + name, '-out', csr);
+    run('x509', '-req', '-in', csr, '-CA', caCert, '-CAkey', caKey, '-CAcreateserial',
+      '-out', cert, '-days', '2', '-sha256', '-extfile', ext);
+    return {
+      keyPath: key,
+      certPath: cert,
+      key: await fsp.readFile(key, 'utf8'),
+      cert: await fsp.readFile(cert, 'utf8'),
+      uri
+    };
+  }
+
+  const trustDomain = 'bench.openmesh.local';
+  const caller = await issue('bench-caller', 'spiffe://' + trustDomain + '/service/bench-caller');
+  const target = await issue('bench-target', 'spiffe://' + trustDomain + '/service/bench-target');
+  return {
+    dir,
+    trustDomain,
+    caPath: caCert,
+    ca: await fsp.readFile(caCert, 'utf8'),
+    caller,
+    target,
+    close: () => fsp.rm(dir, { recursive: true, force: true })
+  };
+}
+
+async function startTargets(count, { tls } = {}) {
   const targets = [];
   for (let index = 0; index < count; index++) {
     const id = 'target-' + index;
     const body = Buffer.from(JSON.stringify({ ok: true, id }));
-    const server = http.createServer((_req, res) => {
+    const handler = (_req, res) => {
       res.writeHead(200, {
         'content-type': 'application/json',
         'content-length': body.byteLength,
         'x-bench-target': id
       });
       res.end(body);
-    });
+    };
+    const server = tls
+      ? https.createServer({
+          ca: tls.ca,
+          cert: tls.target.cert,
+          key: tls.target.key,
+          requestCert: true,
+          rejectUnauthorized: true,
+          minVersion: 'TLSv1.3'
+        }, handler)
+      : http.createServer(handler);
     const port = await listen(server);
     targets.push({
       id,
       port,
-      url: 'http://127.0.0.1:' + port,
+      url: (tls ? 'https' : 'http') + '://127.0.0.1:' + port,
       close: () => new Promise(resolve => server.close(resolve))
     });
   }
