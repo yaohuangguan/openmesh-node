@@ -179,8 +179,8 @@ async function measure(request, { duration = durationMs, warmup = warmupMs, conn
 }
 
 async function measureFailure(request, injectFailure, {
-  duration = 3000,
-  injectAfter = 500,
+  duration = durationMs,
+  injectAfter = Math.min(1000, Math.max(250, Math.floor(durationMs * 0.2))),
   connections = concurrency
 } = {}) {
   const warmEnd = performance.now() + warmupMs;
@@ -242,7 +242,7 @@ async function measureFailure(request, injectFailure, {
   };
 }
 
-async function startOpenMesh(targets) {
+async function startOpenMesh(targets, { tls } = {}) {
   const token = randomBytes(24).toString('hex');
   const control = openmesh().register(controlPlane({ token }));
   const controlAddress = await control.listen({ port: 0 });
@@ -258,6 +258,16 @@ async function startOpenMesh(targets) {
 
   const app = openmesh({
     service: 'bench-caller',
+    ...(tls
+      ? {
+          identity: {
+            trustDomain: tls.trustDomain,
+            ca: tls.ca,
+            cert: tls.caller.cert,
+            key: tls.caller.key
+          }
+        }
+      : {}),
     mesh: {
       control: { url: controlUrl, token },
       defaults: {
@@ -289,13 +299,47 @@ async function startOpenMesh(targets) {
   };
 }
 
-function envoyConfig(listenerPort, clusterName, endpoints, { retry = false, outlier = false } = {}) {
+function envoyConfig(
+  listenerPort,
+  clusterName,
+  endpoints,
+  { retry = false, outlier = false, downstreamTls = false, upstreamTls = false } = {}
+) {
   const hosts = endpoints.map(({ port }) => `
                         - endpoint:
                             address:
                               socket_address:
                                 address: 127.0.0.1
                                 port_value: ${port}`).join('\n');
+
+  const downstreamTransport = downstreamTls
+    ? `
+            transport_socket:
+              name: envoy.transport_sockets.tls
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+                require_client_certificate: true
+                common_tls_context:
+                  tls_certificates:
+                    - certificate_chain: { filename: "/certs/bench-target.crt" }
+                      private_key: { filename: "/certs/bench-target.key" }
+                  validation_context:
+                    trusted_ca: { filename: "/certs/ca.crt" }`
+    : '';
+
+  const upstreamTransport = upstreamTls
+    ? `
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          common_tls_context:
+            tls_certificates:
+              - certificate_chain: { filename: "/certs/bench-caller.crt" }
+                private_key: { filename: "/certs/bench-caller.key" }
+            validation_context:
+              trusted_ca: { filename: "/certs/ca.crt" }`
+    : '';
 
   return `static_resources:
   listeners:
@@ -305,7 +349,8 @@ function envoyConfig(listenerPort, clusterName, endpoints, { retry = false, outl
           address: 127.0.0.1
           port_value: ${listenerPort}
       filter_chains:
-        - filters:
+        -${downstreamTransport}
+          filters:
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
@@ -337,6 +382,7 @@ ${retry ? '                            retry_policy:\n                          
           - lb_endpoints:
 ${hosts}
 ${outlier ? '      outlier_detection:\n        consecutive_5xx: 1\n        consecutive_gateway_failure: 1\n        interval: 0.1s\n        base_ejection_time: 2s\n        max_ejection_percent: 100' : ''}
+${upstreamTransport}
 `;
 }
 
@@ -350,14 +396,14 @@ function docker(...dockerArgs) {
   }
 }
 
-function validateEnvoyConfig(configPath) {
-  docker(
+function validateEnvoyConfig(configPath, tls) {
+  const command = [
     'run', '--rm',
-    '-v', configPath + ':/etc/envoy/envoy.yaml:ro',
-    envoyImage,
-    '--mode', 'validate',
-    '-c', '/etc/envoy/envoy.yaml'
-  );
+    '-v', configPath + ':/etc/envoy/envoy.yaml:ro'
+  ];
+  if (tls) command.push('-v', tls.dir + ':/certs:ro');
+  command.push(envoyImage, '--mode', 'validate', '-c', '/etc/envoy/envoy.yaml');
+  docker(...command);
 }
 
 async function waitPort(port, timeout = 10000) {
@@ -426,7 +472,7 @@ function rawHttpRequest(port) {
   });
 }
 
-async function startEnvoy(targets) {
+async function startEnvoy(targets, { tls } = {}) {
   try {
     docker('version');
   } catch (error) {
@@ -442,28 +488,35 @@ async function startEnvoy(targets) {
 
   await fsp.writeFile(
     inboundConfig,
-    envoyConfig(inboundPort, 'backends', targets, { retry: true, outlier: true })
+    envoyConfig(inboundPort, 'backends', targets, {
+      retry: true,
+      outlier: true,
+      downstreamTls: Boolean(tls)
+    })
   );
   await fsp.writeFile(
     outboundConfig,
-    envoyConfig(outboundPort, 'inbound_proxy', [{ port: inboundPort }])
+    envoyConfig(outboundPort, 'inbound_proxy', [{ port: inboundPort }], {
+      upstreamTls: Boolean(tls)
+    })
   );
 
-  validateEnvoyConfig(inboundConfig);
-  validateEnvoyConfig(outboundConfig);
+  validateEnvoyConfig(inboundConfig, tls);
+  validateEnvoyConfig(outboundConfig, tls);
 
   const suffix = process.pid + '-' + Math.random().toString(16).slice(2);
   const inboundName = 'openmesh-bench-envoy-in-' + suffix;
   const outboundName = 'openmesh-bench-envoy-out-' + suffix;
 
+  const tlsMount = tls ? ['-v', tls.dir + ':/certs:ro'] : [];
   docker('run', '-d', '--name', inboundName, '--network', 'host',
-    '-v', inboundConfig + ':/etc/envoy/envoy.yaml:ro', envoyImage,
+    '-v', inboundConfig + ':/etc/envoy/envoy.yaml:ro', ...tlsMount, envoyImage,
     '-c', '/etc/envoy/envoy.yaml', '--disable-hot-restart', '--log-level', 'error');
   try {
     await waitPort(inboundPort);
-    await waitRoute(inboundPort);
+    if (!tls) await waitRoute(inboundPort);
     docker('run', '-d', '--name', outboundName, '--network', 'host',
-      '-v', outboundConfig + ':/etc/envoy/envoy.yaml:ro', envoyImage,
+      '-v', outboundConfig + ':/etc/envoy/envoy.yaml:ro', ...tlsMount, envoyImage,
       '-c', '/etc/envoy/envoy.yaml', '--disable-hot-restart', '--log-level', 'error');
     await waitPort(outboundPort);
     await waitRoute(outboundPort);
@@ -493,11 +546,15 @@ async function startEnvoy(targets) {
   };
 }
 
-async function runSteady(framework, peerCount) {
-  const targets = await startTargets(peerCount);
+async function runSteady(framework, peerCount, { tls } = {}) {
+  const targets = await startTargets(peerCount, {
+    tls: framework === 'openmesh' ? tls : undefined
+  });
   let client;
   try {
-    client = framework === 'openmesh' ? await startOpenMesh(targets) : await startEnvoy(targets);
+    client = framework === 'openmesh'
+      ? await startOpenMesh(targets, { tls })
+      : await startEnvoy(targets, { tls });
     const result = await measure(client.request);
     return result;
   } finally {
@@ -512,7 +569,9 @@ async function runFailure(framework) {
   try {
     client = framework === 'openmesh' ? await startOpenMesh(targets) : await startEnvoy(targets);
     const doomed = targets.slice(0, 3);
-    const result = await measureFailure(client.request, () => closeTargets(doomed));
+    const result = await measureFailure(client.request, () => closeTargets(doomed), {
+      duration: durationMs
+    });
     return result;
   } finally {
     await client?.close();
@@ -541,6 +600,7 @@ function summarize(rows, scenario, framework) {
 (async () => {
   docker('pull', envoyImage);
   await fsp.mkdir(path.dirname(output), { recursive: true });
+  const tls = await createTlsMaterial();
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -557,13 +617,16 @@ function summarize(rows, scenario, framework) {
       concurrency,
       pathModel: {
         openmesh: 'Node caller -> OpenMesh app.mesh managed pool -> Node target',
-        envoy: 'Node caller -> outbound Envoy -> inbound Envoy -> Node target'
+        envoy: 'Node caller -> outbound Envoy -> inbound Envoy -> Node target',
+        openmeshMtls: 'Node caller -> OpenMesh app.mesh mTLS -> HTTPS Node target',
+        envoyMtls: 'Node caller -> outbound Envoy -> mTLS -> inbound Envoy -> Node target'
       }
     },
     notes: [
       'Same runner, same Node load generator, same raw Node targets.',
       'Envoy is measured as a two-proxy sidecar-style hop.',
       'OpenMesh includes live service discovery state and managed peer selection in-process.',
+      'The mTLS scenario uses the same ephemeral CA and ECDSA workload certificates for both data planes.',
       'Linkerd2-proxy is not included in numeric results because the official proxy is control-plane coupled and not designed for standalone static configuration.'
     ],
     results: [],
@@ -598,6 +661,23 @@ function summarize(rows, scenario, framework) {
   for (let round = 0; round < rounds; round++) {
     const order = round % 2 ? [...frameworks].reverse() : frameworks;
     for (const framework of order) {
+      const result = await runSteady(framework, 1, { tls });
+      report.results.push({ scenario: 'mtls-1-peer', framework, round: round + 1, ...result });
+      console.log(
+        'mtls-1-peer',
+        'round', round + 1,
+        framework,
+        result.rps.toFixed(0) + ' req/s',
+        'p99 ' + result.p99Ms.toFixed(2) + ' ms',
+        'errors ' + result.errors
+      );
+      await fsp.writeFile(output, JSON.stringify(report, null, 2) + '\n');
+    }
+  }
+
+  for (let round = 0; round < rounds; round++) {
+    const order = round % 2 ? [...frameworks].reverse() : frameworks;
+    for (const framework of order) {
       const result = await runFailure(framework);
       report.results.push({ scenario: 'failure-30pct', framework, round: round + 1, ...result });
       console.log(
@@ -612,11 +692,12 @@ function summarize(rows, scenario, framework) {
     }
   }
 
-  for (const scenario of ['baseline-1-peer', 'lb-10-peer', 'failure-30pct']) {
+  for (const scenario of ['baseline-1-peer', 'lb-10-peer', 'mtls-1-peer', 'failure-30pct']) {
     for (const framework of frameworks) report.summary.push(summarize(report.results, scenario, framework));
   }
 
   await fsp.writeFile(output, JSON.stringify(report, null, 2) + '\n');
+  await tls.close();
   console.log('Saved mesh benchmark report:', output);
 })().catch(error => {
   console.error(error);

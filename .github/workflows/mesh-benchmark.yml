@@ -39,7 +39,7 @@ jobs:
       - run: npm run build
       - name: Run OpenMesh vs Envoy mesh benchmark
         run: >
-          npm run bench:mesh -- --duration=2 --rounds=2 --connections=32
+          npm run bench:mesh -- --duration=5 --rounds=3 --connections=32
           --envoy-image=envoyproxy/envoy:v1.31-latest
           --output=benchmarks/results/mesh-ci.json
       - name: Render benchmark summary

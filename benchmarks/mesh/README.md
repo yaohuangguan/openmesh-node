@@ -31,6 +31,10 @@ One healthy target. This answers: what is the steady-state cost of making a serv
 
 Ten healthy targets. OpenMesh uses its managed P2C pool; Envoy uses `LEAST_REQUEST`.
 
+### mtls-1-peer
+
+One healthy service relationship with mutual TLS enabled. OpenMesh uses its application-native workload identity path with SPIFFE-style URI SANs. Envoy uses the same ephemeral benchmark CA and workload certificates on the outbound-proxy → inbound-proxy hop.
+
 ### failure-30pct
 
 Ten targets start healthy. During load, three targets are stopped. The benchmark records:
@@ -50,8 +54,8 @@ Docker is required because the Envoy side of the comparison uses the official En
 ```sh
 npm run build
 node benchmarks/mesh/run.cjs \
-  --duration=2 \
-  --rounds=2 \
+  --duration=5 \
+  --rounds=3 \
   --connections=32 \
   --output=benchmarks/results/mesh-local.json
 ```
