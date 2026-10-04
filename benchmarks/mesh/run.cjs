@@ -404,13 +404,13 @@ async function startEnvoy(targets) {
 
   docker('run', '-d', '--name', inboundName, '--network', 'host',
     '-v', inboundConfig + ':/etc/envoy/envoy.yaml:ro', envoyImage,
-    '-c', '/etc/envoy/envoy.yaml', '--log-level', 'error');
+    '-c', '/etc/envoy/envoy.yaml', '--disable-hot-restart', '--log-level', 'error');
   try {
     await waitPort(inboundPort);
     await waitRoute(inboundPort);
     docker('run', '-d', '--name', outboundName, '--network', 'host',
       '-v', outboundConfig + ':/etc/envoy/envoy.yaml:ro', envoyImage,
-      '-c', '/etc/envoy/envoy.yaml', '--log-level', 'error');
+      '-c', '/etc/envoy/envoy.yaml', '--disable-hot-restart', '--log-level', 'error');
     await waitPort(outboundPort);
     await waitRoute(outboundPort);
   } catch (error) {
