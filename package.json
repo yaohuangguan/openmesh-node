@@ -135,7 +135,8 @@
     "build": "node scripts/build.cjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "prepare": "npm run build",
-    "prepublishOnly": "npm test && npm run test:types && npm run test:package && npm run demo:services"
+    "prepublishOnly": "npm test && npm run test:types && npm run test:package && npm run demo:services",
+    "bench:mesh": "node benchmarks/mesh/run.cjs"
   },
   "peerDependencies": {
     "fastify": "^5.0.0"
