@@ -90,6 +90,10 @@ async function createTlsMaterial() {
   const trustDomain = 'bench.openmesh.local';
   const caller = await issue('bench-caller', 'spiffe://' + trustDomain + '/service/bench-caller');
   const target = await issue('bench-target', 'spiffe://' + trustDomain + '/service/bench-target');
+  await fsp.chmod(dir, 0o755);
+  for (const file of [caCert, caller.certPath, caller.keyPath, target.certPath, target.keyPath]) {
+    await fsp.chmod(file, 0o644);
+  }
   return {
     dir,
     trustDomain,
