@@ -415,13 +415,13 @@ Every published subpath is exercised through real packed-tarball CJS + ESM smoke
 
 OpenMesh does not market itself as “the fastest Node.js framework.”
 
-The recorded 0.4.0 release benchmark uses the same machine, workload, warmup, process isolation, and load generator for both OpenMesh and the comparison baseline. Across five small loopback workloads, the geometric-mean normalized throughput ratio was **98.0%**, with **0 request errors, timeouts, or non-2xx responses across 30 recorded runs**.
+The primary 0.5 benchmark measures a complete service call with the same Node caller and target while changing only the data plane. On the recorded Intel macOS run, median throughput was **1,807 req/s for OpenMesh**, **1,281 req/s for a two-proxy Envoy path**, and **1,243 req/s for a two-sidecar Dapr path**. OpenMesh also used less summed CPU than either sidecar topology in that run.
 
-The benchmark exists to answer a more useful question:
+The point is architectural, not language bragging:
 
-> Did the runtime features make the native request path materially worse?
+> How much does the service-mesh data path cost after the application has decided to make a service call?
 
-CI enforces normalized regression budgets on every change.
+The older OpenMesh/Fastify benchmark remains in CI as an internal native-HTTP regression guard. It is no longer the headline comparison.
 
 [Method, raw rounds, limits, and reproducibility](docs/performance.md)
 

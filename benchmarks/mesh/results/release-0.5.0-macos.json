@@ -1,0 +1,323 @@
+{
+  "generatedAt": "2026-10-04T01:36:15.448Z",
+  "methodology": "native macOS processes; identical Node caller/target; end-to-end application-to-application invocation",
+  "host": {
+    "platform": "darwin",
+    "release": "24.6.0",
+    "cpu": "Intel(R) Core(TM) i5-8279U CPU @ 2.40GHz",
+    "logicalCpuCount": 8
+  },
+  "versions": {
+    "openmesh": "0.5.0",
+    "node": "v24.21.0",
+    "envoy": "Envoy 1.37.2 / RELEASE / BoringSSL",
+    "dapr": "1.18.4"
+  },
+  "config": {
+    "durationSeconds": 5,
+    "rounds": 5,
+    "connections": 32,
+    "warmupSeconds": 2,
+    "pipelining": 1,
+    "envoyWorkers": 1,
+    "daprGomaxprocs": 1,
+    "modes": [
+      "direct",
+      "openmesh",
+      "envoy",
+      "dapr"
+    ]
+  },
+  "results": [
+    {
+      "requestsPerSecond": 2581.4,
+      "latencyP50Ms": 11,
+      "latencyP99Ms": 35,
+      "throughputBytesPerSecond": 1132851.2,
+      "cpuPercentAvg": 130.55,
+      "cpuPercentMax": 223.9,
+      "rssMiBAvg": 126.03841145833333,
+      "rssMiBMax": 132.84765625,
+      "mode": "direct",
+      "round": 1
+    },
+    {
+      "requestsPerSecond": 3126.6,
+      "latencyP50Ms": 9,
+      "latencyP99Ms": 28,
+      "throughputBytesPerSecond": 1372467.2,
+      "cpuPercentAvg": 111.68333333333335,
+      "cpuPercentMax": 130.9,
+      "rssMiBAvg": 132.41536458333334,
+      "rssMiBMax": 133.08984375,
+      "mode": "direct",
+      "round": 2
+    },
+    {
+      "requestsPerSecond": 3058.6,
+      "latencyP50Ms": 9,
+      "latencyP99Ms": 26,
+      "throughputBytesPerSecond": 1342566.4,
+      "cpuPercentAvg": 106.46666666666665,
+      "cpuPercentMax": 127.1,
+      "rssMiBAvg": 133.49186197916666,
+      "rssMiBMax": 145.17578125,
+      "mode": "direct",
+      "round": 3
+    },
+    {
+      "requestsPerSecond": 2985.4,
+      "latencyP50Ms": 9,
+      "latencyP99Ms": 30,
+      "throughputBytesPerSecond": 1310003.2,
+      "cpuPercentAvg": 106.52499999999999,
+      "cpuPercentMax": 126.80000000000001,
+      "rssMiBAvg": 145.49967447916666,
+      "rssMiBMax": 145.640625,
+      "mode": "direct",
+      "round": 4
+    },
+    {
+      "requestsPerSecond": 2987,
+      "latencyP50Ms": 9,
+      "latencyP99Ms": 33,
+      "throughputBytesPerSecond": 1311078.4,
+      "cpuPercentAvg": 102.90833333333335,
+      "cpuPercentMax": 129.3,
+      "rssMiBAvg": 145.65266927083334,
+      "rssMiBMax": 145.78125,
+      "mode": "direct",
+      "round": 5
+    },
+    {
+      "requestsPerSecond": 1483.8,
+      "latencyP50Ms": 18,
+      "latencyP99Ms": 64,
+      "throughputBytesPerSecond": 651289.6,
+      "cpuPercentAvg": 109.11666666666666,
+      "cpuPercentMax": 136.1,
+      "rssMiBAvg": 144.4150390625,
+      "rssMiBMax": 159.29296875,
+      "mode": "openmesh",
+      "round": 1
+    },
+    {
+      "requestsPerSecond": 1875,
+      "latencyP50Ms": 15,
+      "latencyP99Ms": 45,
+      "throughputBytesPerSecond": 823040,
+      "cpuPercentAvg": 118.69999999999997,
+      "cpuPercentMax": 190.8,
+      "rssMiBAvg": 163.12109375,
+      "rssMiBMax": 164.703125,
+      "mode": "openmesh",
+      "round": 2
+    },
+    {
+      "requestsPerSecond": 1562.6,
+      "latencyP50Ms": 17,
+      "latencyP99Ms": 58,
+      "throughputBytesPerSecond": 686028.8,
+      "cpuPercentAvg": 95.48333333333333,
+      "cpuPercentMax": 120.19999999999999,
+      "rssMiBAvg": 176.8271484375,
+      "rssMiBMax": 193.41015625,
+      "mode": "openmesh",
+      "round": 3
+    },
+    {
+      "requestsPerSecond": 1807,
+      "latencyP50Ms": 15,
+      "latencyP99Ms": 53,
+      "throughputBytesPerSecond": 793241.6,
+      "cpuPercentAvg": 104.80833333333332,
+      "cpuPercentMax": 129.8,
+      "rssMiBAvg": 193.52278645833334,
+      "rssMiBMax": 193.71484375,
+      "mode": "openmesh",
+      "round": 4
+    },
+    {
+      "requestsPerSecond": 1828.8,
+      "latencyP50Ms": 15,
+      "latencyP99Ms": 53,
+      "throughputBytesPerSecond": 802764.8,
+      "cpuPercentAvg": 104.20833333333333,
+      "cpuPercentMax": 146.9,
+      "rssMiBAvg": 194.11458333333334,
+      "rssMiBMax": 194.78515625,
+      "mode": "openmesh",
+      "round": 5
+    },
+    {
+      "requestsPerSecond": 914.2,
+      "latencyP50Ms": 25,
+      "latencyP99Ms": 124,
+      "throughputBytesPerSecond": 401356.8,
+      "cpuPercentAvg": 160.39166666666668,
+      "cpuPercentMax": 232,
+      "rssMiBAvg": 181.2314453125,
+      "rssMiBMax": 188.265625,
+      "mode": "envoy",
+      "round": 1
+    },
+    {
+      "requestsPerSecond": 1281.2,
+      "latencyP50Ms": 23,
+      "latencyP99Ms": 51,
+      "throughputBytesPerSecond": 562380.81,
+      "cpuPercentAvg": 203.86666666666665,
+      "cpuPercentMax": 278.20000000000005,
+      "rssMiBAvg": 191.09798177083334,
+      "rssMiBMax": 192.46875,
+      "mode": "envoy",
+      "round": 2
+    },
+    {
+      "requestsPerSecond": 1060.41,
+      "latencyP50Ms": 25,
+      "latencyP99Ms": 109,
+      "throughputBytesPerSecond": 465510.4,
+      "cpuPercentAvg": 164.41666666666669,
+      "cpuPercentMax": 218.6,
+      "rssMiBAvg": 192.86067708333334,
+      "rssMiBMax": 193.19921875,
+      "mode": "envoy",
+      "round": 3
+    },
+    {
+      "requestsPerSecond": 1313.4,
+      "latencyP50Ms": 22,
+      "latencyP99Ms": 58,
+      "throughputBytesPerSecond": 576588.81,
+      "cpuPercentAvg": 183.79999999999998,
+      "cpuPercentMax": 222.10000000000002,
+      "rssMiBAvg": 198.63899739583334,
+      "rssMiBMax": 206.51953125,
+      "mode": "envoy",
+      "round": 4
+    },
+    {
+      "requestsPerSecond": 1322,
+      "latencyP50Ms": 22,
+      "latencyP99Ms": 54,
+      "throughputBytesPerSecond": 580275.2,
+      "cpuPercentAvg": 184.70833333333334,
+      "cpuPercentMax": 219.1,
+      "rssMiBAvg": 206.75651041666666,
+      "rssMiBMax": 206.890625,
+      "mode": "envoy",
+      "round": 5
+    },
+    {
+      "requestsPerSecond": 1192.41,
+      "latencyP50Ms": 24,
+      "latencyP99Ms": 64,
+      "throughputBytesPerSecond": 523468.8,
+      "cpuPercentAvg": 219.95833333333334,
+      "cpuPercentMax": 244.5,
+      "rssMiBAvg": 326.3193359375,
+      "rssMiBMax": 332.2109375,
+      "mode": "dapr",
+      "round": 1
+    },
+    {
+      "requestsPerSecond": 1184.8,
+      "latencyP50Ms": 24,
+      "latencyP99Ms": 66,
+      "throughputBytesPerSecond": 520089.6,
+      "cpuPercentAvg": 206.32499999999996,
+      "cpuPercentMax": 263.6,
+      "rssMiBAvg": 335.0699869791667,
+      "rssMiBMax": 336.05078125,
+      "mode": "dapr",
+      "round": 2
+    },
+    {
+      "requestsPerSecond": 1242.6,
+      "latencyP50Ms": 23,
+      "latencyP99Ms": 57,
+      "throughputBytesPerSecond": 545408,
+      "cpuPercentAvg": 194.82500000000002,
+      "cpuPercentMax": 225.10000000000002,
+      "rssMiBAvg": 336.4518229166667,
+      "rssMiBMax": 337.015625,
+      "mode": "dapr",
+      "round": 3
+    },
+    {
+      "requestsPerSecond": 1266,
+      "latencyP50Ms": 23,
+      "latencyP99Ms": 62,
+      "throughputBytesPerSecond": 555827.2,
+      "cpuPercentAvg": 190.89166666666668,
+      "cpuPercentMax": 222.2,
+      "rssMiBAvg": 347.2978515625,
+      "rssMiBMax": 350.1484375,
+      "mode": "dapr",
+      "round": 4
+    },
+    {
+      "requestsPerSecond": 1296.8,
+      "latencyP50Ms": 21,
+      "latencyP99Ms": 63,
+      "throughputBytesPerSecond": 569292.81,
+      "cpuPercentAvg": 197.49166666666667,
+      "cpuPercentMax": 226.5,
+      "rssMiBAvg": 350.4117838541667,
+      "rssMiBMax": 350.65234375,
+      "mode": "dapr",
+      "round": 5
+    }
+  ],
+  "summary": [
+    {
+      "mode": "direct",
+      "medianRps": 2987,
+      "medianP50Ms": 9,
+      "medianP99Ms": 30,
+      "medianCpuPercent": 106.52499999999999,
+      "medianRssMiB": 133.49186197916666,
+      "maxRssMiB": 145.78125,
+      "throughputVsDirect": 1,
+      "p99DeltaMs": 0,
+      "rssDeltaMiB": 0
+    },
+    {
+      "mode": "openmesh",
+      "medianRps": 1807,
+      "medianP50Ms": 15,
+      "medianP99Ms": 53,
+      "medianCpuPercent": 104.80833333333332,
+      "medianRssMiB": 176.8271484375,
+      "maxRssMiB": 194.78515625,
+      "throughputVsDirect": 0.6049548041513224,
+      "p99DeltaMs": 23,
+      "rssDeltaMiB": 43.33528645833334
+    },
+    {
+      "mode": "envoy",
+      "medianRps": 1281.2,
+      "medianP50Ms": 23,
+      "medianP99Ms": 58,
+      "medianCpuPercent": 183.79999999999998,
+      "medianRssMiB": 192.86067708333334,
+      "maxRssMiB": 206.890625,
+      "throughputVsDirect": 0.42892534315366593,
+      "p99DeltaMs": 28,
+      "rssDeltaMiB": 59.368815104166686
+    },
+    {
+      "mode": "dapr",
+      "medianRps": 1242.6,
+      "medianP50Ms": 23,
+      "medianP99Ms": 63,
+      "medianCpuPercent": 197.49166666666667,
+      "medianRssMiB": 336.4518229166667,
+      "maxRssMiB": 350.65234375,
+      "throughputVsDirect": 0.4160026782725142,
+      "p99DeltaMs": 33,
+      "rssDeltaMiB": 202.95996093750003
+    }
+  ]
+}
