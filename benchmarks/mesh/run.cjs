@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const http = require('node:http');
+const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
@@ -295,17 +296,39 @@ function docker(...dockerArgs) {
   return execFileSync('docker', dockerArgs, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
-async function waitHttp(port, timeout = 10000) {
+async function waitPort(port, timeout = 10000) {
   const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const connected = await new Promise(resolve => {
+      const socket = net.connect({ host: '127.0.0.1', port });
+      const done = value => {
+        socket.removeAllListeners();
+        socket.destroy();
+        resolve(value);
+      };
+      socket.once('connect', () => done(true));
+      socket.once('error', () => done(false));
+      socket.setTimeout(250, () => done(false));
+    });
+    if (connected) return;
+    await sleep(100);
+  }
+  throw new Error('Timed out waiting for Envoy listener on port ' + port);
+}
+
+async function waitRoute(port, timeout = 10000) {
+  const deadline = Date.now() + timeout;
+  let lastError;
   while (Date.now() < deadline) {
     try {
       await rawHttpRequest(port);
       return;
-    } catch {
+    } catch (error) {
+      lastError = error;
       await sleep(100);
     }
   }
-  throw new Error('Timed out waiting for Envoy on port ' + port);
+  throw new Error('Envoy listener is up but route never became healthy on port ' + port + ': ' + (lastError?.message || 'unknown'));
 }
 
 const agents = new Map();
@@ -369,15 +392,17 @@ async function startEnvoy(targets) {
     '-v', inboundConfig + ':/etc/envoy/envoy.yaml:ro', envoyImage,
     '-c', '/etc/envoy/envoy.yaml', '--log-level', 'error');
   try {
-    await waitHttp(inboundPort);
+    await waitPort(inboundPort);
+    await waitRoute(inboundPort);
     docker('run', '-d', '--name', outboundName, '--network', 'host',
       '-v', outboundConfig + ':/etc/envoy/envoy.yaml:ro', envoyImage,
       '-c', '/etc/envoy/envoy.yaml', '--log-level', 'error');
-    await waitHttp(outboundPort);
+    await waitPort(outboundPort);
+    await waitRoute(outboundPort);
   } catch (error) {
     let diagnostics = '';
     for (const name of [outboundName, inboundName]) {
-      try { diagnostics += '\n[' + name + ']\n' + docker('logs', name); } catch {}
+      try { diagnostics += '\n[' + name + ' state]\n' + docker('inspect', '-f', '{{json .State}}', name); } catch {}\n      try { diagnostics += '\n[' + name + ' logs]\n' + docker('logs', name); } catch {}
     }
     for (const name of [outboundName, inboundName]) {
       try { docker('rm', '-f', name); } catch {}
