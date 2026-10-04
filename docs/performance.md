@@ -30,7 +30,8 @@ The comparison is topology-aware rather than feature-equivalence marketing:
 - Dapr is measured as its caller + target sidecar service-invocation path.
 - Discovery/control-plane state is warm before measured traffic begins.
 - The caller and target application implementations are identical.
-- Envoy 1.37.2 is used because it was the newest stable macOS x86_64 binary listed by the reproducible `func-e` path on this Intel test machine at measurement time. Results from different platforms or Envoy versions are reported separately rather than mixed.
+- Envoy 1.37.2 is deliberately pinned in this preserved release artifact; it is not presented as the newest Envoy release. Results from different platforms or Envoy versions are reported separately rather than mixed.
+- Linkerd's Rust data plane is intentionally not represented by an extracted standalone proxy. A Linkerd result belongs in a separate Kubernetes + workload-identity/mTLS suite where its normal control-plane and identity path can be measured under equivalent conditions.
 
 Raw rounds and full environment metadata are preserved in [`benchmarks/mesh/results/release-0.5.0-macos.json`](../benchmarks/mesh/results/release-0.5.0-macos.json).
 
@@ -161,7 +162,9 @@ npm run bench:guard -- \
 
 The job uploads the raw JSON report even when the guard fails. These thresholds are regression budgets, not performance claims: passing means the current request path stayed inside an intentionally broad normalized envelope on that runner. Release claims still require longer dedicated measurements and preserved raw results.
 
-## Limits
+## Native HTTP regression limits
+
+The limits below apply to the preserved native HTTP microbenchmark, not to the mesh data-plane benchmark above.
 
 Loopback results may be constrained by the load generator, OS networking and shared CPU. Three-second rounds are short and background load adds noise. This report measures a small route set with tiny payloads. It does not measure TLS, many-route lookup, memory under sustained load, production payloads, Fastify schema-optimized serialization, Express/Fastify bridges, or distributed client overhead.
 

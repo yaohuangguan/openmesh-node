@@ -37,7 +37,7 @@ The checked-in release report was measured with native macOS processes on an Int
 - 32 keep-alive connections
 - pipelining 1
 
-Envoy 1.37.2 was the newest stable macOS x86_64 build listed by the reproducible `func-e` path on that machine at measurement time. Results from a different Envoy version or platform must be reported as a separate run rather than merged into the release table.
+Envoy 1.37.2 is deliberately pinned in this preserved release artifact. It is not presented as the newest Envoy release. Results from a different Envoy version or platform must be reported as a separate run rather than merged into the release table.
 
 The raw report is [`results/release-0.5.0-macos.json`](results/release-0.5.0-macos.json).
 
