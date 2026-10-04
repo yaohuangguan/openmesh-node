@@ -24,7 +24,7 @@ const rounds = Number(args.rounds || 2);
 const durationMs = Number(args.duration || 2) * 1000;
 const warmupMs = Number(args.warmup || 1) * 1000;
 const concurrency = Number(args.connections || 32);
-const envoyImage = args['envoy-image'] || 'envoyproxy/envoy:v1.31-latest';
+const envoyImage = args['envoy-image'] || 'envoyproxy/envoy:v1.39.2';
 const output = path.resolve(process.cwd(), args.output || 'benchmarks/results/mesh-ci.json');
 
 for (const [name, value] of Object.entries({ rounds, durationMs, warmupMs, concurrency })) {
