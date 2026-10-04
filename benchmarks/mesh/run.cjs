@@ -365,12 +365,12 @@ async function startEnvoy(targets) {
   const inboundName = 'openmesh-bench-envoy-in-' + suffix;
   const outboundName = 'openmesh-bench-envoy-out-' + suffix;
 
-  docker('run', '-d', '--rm', '--name', inboundName, '--network', 'host',
+  docker('run', '-d', '--name', inboundName, '--network', 'host',
     '-v', inboundConfig + ':/etc/envoy/envoy.yaml:ro', envoyImage,
     '-c', '/etc/envoy/envoy.yaml', '--log-level', 'error');
   try {
     await waitHttp(inboundPort);
-    docker('run', '-d', '--rm', '--name', outboundName, '--network', 'host',
+    docker('run', '-d', '--name', outboundName, '--network', 'host',
       '-v', outboundConfig + ':/etc/envoy/envoy.yaml:ro', envoyImage,
       '-c', '/etc/envoy/envoy.yaml', '--log-level', 'error');
     await waitHttp(outboundPort);
