@@ -312,20 +312,20 @@ function envoyConfig(
                                 address: 127.0.0.1
                                 port_value: ${port}`).join('\n');
 
-  const downstreamTransport = downstreamTls
-    ? `
-            transport_socket:
-              name: envoy.transport_sockets.tls
-              typed_config:
-                "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
-                require_client_certificate: true
-                common_tls_context:
-                  tls_certificates:
-                    - certificate_chain: { filename: "/certs/bench-target.crt" }
-                      private_key: { filename: "/certs/bench-target.key" }
-                  validation_context:
-                    trusted_ca: { filename: "/certs/ca.crt" }`
-    : '';
+  const filterChain = downstreamTls
+    ? `        - transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              require_client_certificate: true
+              common_tls_context:
+                tls_certificates:
+                  - certificate_chain: { filename: "/certs/bench-target.crt" }
+                    private_key: { filename: "/certs/bench-target.key" }
+                validation_context:
+                  trusted_ca: { filename: "/certs/ca.crt" }
+          filters:`
+    : '        - filters:';
 
   const upstreamTransport = upstreamTls
     ? `
@@ -349,8 +349,7 @@ function envoyConfig(
           address: 127.0.0.1
           port_value: ${listenerPort}
       filter_chains:
-        -${downstreamTransport}
-          filters:
+${filterChain}
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
