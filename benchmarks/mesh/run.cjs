@@ -267,14 +267,14 @@ function envoyConfig(listenerPort, clusterName, endpoints, { retry = false, outl
                           route:
                             cluster: ${clusterName}
                             timeout: 1s
-${retry ? '                            retry_policy:\n                              retry_on: "5xx,connect-failure,reset"\n                              num_retries: 1\n                              per_try_timeout: 400ms' : ''}
+${retry ? '                            retry_policy:\n                              retry_on: "5xx,connect-failure,reset"\n                              num_retries: 1\n                              per_try_timeout: 0.4s' : ''}
                 http_filters:
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
   clusters:
     - name: ${clusterName}
-      connect_timeout: 250ms
+      connect_timeout: 0.25s
       type: STATIC
       lb_policy: LEAST_REQUEST
       load_assignment:
