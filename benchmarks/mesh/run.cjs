@@ -283,17 +283,27 @@ ${retry ? '                            retry_policy:\n                          
           - lb_endpoints:
 ${hosts}
 ${outlier ? '      outlier_detection:\n        consecutive_5xx: 1\n        consecutive_gateway_failure: 1\n        interval: 0.1s\n        base_ejection_time: 2s\n        max_ejection_percent: 100' : ''}
-admin:
-  access_log_path: /tmp/admin.log
-  address:
-    socket_address:
-      address: 127.0.0.1
-      port_value: 0
 `;
 }
 
 function docker(...dockerArgs) {
-  return execFileSync('docker', dockerArgs, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  try {
+    return execFileSync('docker', dockerArgs, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  } catch (error) {
+    const stdout = error?.stdout ? String(error.stdout) : '';
+    const stderr = error?.stderr ? String(error.stderr) : '';
+    throw new Error('docker ' + dockerArgs.join(' ') + ' failed\n' + stdout + stderr);
+  }
+}
+
+function validateEnvoyConfig(configPath) {
+  docker(
+    'run', '--rm',
+    '-v', configPath + ':/etc/envoy/envoy.yaml:ro',
+    envoyImage,
+    '--mode', 'validate',
+    '-c', '/etc/envoy/envoy.yaml'
+  );
 }
 
 async function waitPort(port, timeout = 10000) {
@@ -383,6 +393,9 @@ async function startEnvoy(targets) {
     outboundConfig,
     envoyConfig(outboundPort, 'inbound_proxy', [{ port: inboundPort }])
   );
+
+  validateEnvoyConfig(inboundConfig);
+  validateEnvoyConfig(outboundConfig);
 
   const suffix = process.pid + '-' + Math.random().toString(16).slice(2);
   const inboundName = 'openmesh-bench-envoy-in-' + suffix;
