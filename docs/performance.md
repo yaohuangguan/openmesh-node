@@ -1,8 +1,54 @@
 # Performance reports
 
-> **Current package: OpenMesh 0.5.0.** The latest preserved dedicated release benchmark below is from 0.4.0. No new 0.5 release-level benchmark is claimed here; CI continues to run normalized OpenMesh/Fastify regression checks on the current code.
+## OpenMesh 0.5 mesh data-plane benchmark
 
-## Latest preserved release benchmark — 0.4.0
+OpenMesh 0.5 is primarily a service runtime, so the primary benchmark now measures a complete application-to-application call instead of treating native HTTP router throughput as the product benchmark.
+
+Measured on 2026-10-04 with Node v24.21.0 on macOS 24.6.0, Intel Core i5-8279U (8 logical CPUs). Each path uses the **same bare Node caller and bare Node target**. Only the service-to-service data plane changes.
+
+Every result below is the median of five 5-second measured rounds after a 2-second warmup, with 32 keep-alive connections and pipelining 1. All measured rounds completed with zero request errors, timeouts, and non-2xx responses.
+
+| Path | Topology | Median req/s | vs direct | p50 | p99 | CPU sum | RSS sum |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Direct baseline | caller → target | 2,987 | 100.0% | 9 ms | 30 ms | 106.5% | 133.5 MiB |
+| **OpenMesh 0.5.0** | caller → `app.mesh()` → target | **1,807** | **60.5%** | **15 ms** | **53 ms** | **104.8%** | **176.8 MiB** |
+| Envoy 1.37.2 | caller → outbound Envoy → inbound Envoy → target | 1,281 | 42.9% | 23 ms | 58 ms | 183.8% | 192.9 MiB |
+| Dapr 1.18.4 | caller → caller daprd → target daprd → target | 1,243 | 41.6% | 23 ms | 63 ms | 197.5% | 336.5 MiB |
+
+On this topology OpenMesh delivered about **41% more median throughput than the two-proxy Envoy path** and about **45% more than the two-sidecar Dapr path**. The important architectural result is not that JavaScript executes proxy logic faster than C++ or Go. It is that the application-native path avoids two extra proxy/sidecar hops and their process-level CPU and memory cost.
+
+CPU and RSS are the sums of the processes that participate in the measured request path. Envoy was pinned to one worker per proxy (`--concurrency 1`). Dapr sidecars used `GOMAXPROCS=1`. OpenMesh and the shared Node applications each use one Node event loop.
+
+### What this benchmark does and does not prove
+
+This is a **steady-state plaintext HTTP service-invocation baseline**. It deliberately does not mix TLS/mTLS setup, certificate authorities, Kubernetes networking, telemetry exporters, or control-plane provisioning into one number. Those features have materially different architectures and should be measured as separate scenarios.
+
+The comparison is topology-aware rather than feature-equivalence marketing:
+
+- OpenMesh is application-native and adds no sidecar process.
+- Envoy is measured as a conventional outbound + inbound proxy path.
+- Dapr is measured as its caller + target sidecar service-invocation path.
+- Discovery/control-plane state is warm before measured traffic begins.
+- The caller and target application implementations are identical.
+- Envoy 1.37.2 is deliberately pinned in this preserved release artifact; it is not presented as the newest Envoy release. Results from different platforms or Envoy versions are reported separately rather than mixed.
+- Linkerd's Rust data plane is intentionally not represented by an extracted standalone proxy. A Linkerd result belongs in a separate Kubernetes + workload-identity/mTLS suite where its normal control-plane and identity path can be measured under equivalent conditions.
+
+Raw rounds and full environment metadata are preserved in [`benchmarks/mesh/results/release-0.5.0-macos.json`](../benchmarks/mesh/results/release-0.5.0-macos.json).
+
+Reproduce the native-process run:
+
+```sh
+node benchmarks/mesh/run.cjs \
+  --duration=5 --rounds=5 --connections=32 \
+  --modes=direct,openmesh,envoy,dapr
+```
+
+The native-process runner is intentionally small: provide Envoy and daprd binaries through `PATH` or the documented environment variables, then run the same caller/target topology on the host you want to measure. Do not mix results across hosts or platforms.
+
+## Native HTTP regression benchmark — preserved 0.4.0 release baseline
+
+The native OpenMesh/Fastify microbenchmark remains useful as a **regression guard for the HTTP request path**, not as the primary product comparison.
+
 
 Measured on 2026-10-03 with Node v24.18.0 on macOS 24.6.0 (Intel Core i5-8279U, 8 logical CPUs). Each workload uses three 3-second measured rounds, a 1-second warmup, 32 connections, pipelining 1, one load-generator worker, and separate server processes. OpenMesh 0.4.0 is compared with Fastify 5.12.5 on the same machine.
 
@@ -116,7 +162,9 @@ npm run bench:guard -- \
 
 The job uploads the raw JSON report even when the guard fails. These thresholds are regression budgets, not performance claims: passing means the current request path stayed inside an intentionally broad normalized envelope on that runner. Release claims still require longer dedicated measurements and preserved raw results.
 
-## Limits
+## Native HTTP regression limits
+
+The limits below apply to the preserved native HTTP microbenchmark, not to the mesh data-plane benchmark above.
 
 Loopback results may be constrained by the load generator, OS networking and shared CPU. Three-second rounds are short and background load adds noise. This report measures a small route set with tiny payloads. It does not measure TLS, many-route lookup, memory under sustained load, production payloads, Fastify schema-optimized serialization, Express/Fastify bridges, or distributed client overhead.
 

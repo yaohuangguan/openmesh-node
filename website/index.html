@@ -200,73 +200,83 @@ app.<span class="fn">get</span>(<span class="str">'/users/:id'</span>, ({ params
 
       <section id="benchmark" class="benchmark-section section-shell">
         <div class="section-heading benchmark-heading">
-          <span>03 · Benchmark</span>
-          <h2>Measured before marketed.</h2>
+          <span>03 · Mesh benchmark</span>
+          <h2>Measure the whole service call.</h2>
           <p>
-            OpenMesh 0.5.0 is current. The latest preserved release-level native HTTP benchmark is
-            from 0.4.0: same-machine loopback, Node 24, three measured rounds per workload.
+            The 0.5 benchmark now measures application-to-application invocation, not framework-only
+            HTTP routing. Every path uses the same Node caller and target; only the mesh data plane changes.
           </p>
         </div>
 
-        <div class="benchmark-card">
+        <div class="benchmark-card mesh-benchmark-card">
           <div class="benchmark-legend">
-            <span><i class="legend-openmesh"></i>OpenMesh</span>
-            <span><i class="legend-reference"></i>Reference</span>
-            <a href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/performance.md" rel="noopener">Full methodology ↗</a>
+            <span><i class="legend-openmesh"></i>Application-native</span>
+            <span><i class="legend-reference"></i>Sidecar data plane</span>
+            <a href="https://github.com/yaohuangguan/openmesh-node/blob/master/docs/performance.md" rel="noopener">Methodology + raw results ↗</a>
           </div>
 
-          <div class="bar-chart" aria-label="OpenMesh native HTTP benchmark comparison">
-            <div class="bar-row">
-              <div class="bar-label"><strong>Plain text</strong><span>23,011 req/s</span></div>
-              <div class="bar-track">
-                <div class="bar openmesh" style="--value:98.8%"><span>23,011</span></div>
-                <div class="bar reference" style="--value:100%"><span>23,293</span></div>
-              </div>
-              <div class="bar-ratio">98.8%</div>
-            </div>
-
-            <div class="bar-row">
-              <div class="bar-label"><strong>JSON object</strong><span>22,845 req/s</span></div>
-              <div class="bar-track">
-                <div class="bar openmesh" style="--value:96%"><span>22,845</span></div>
-                <div class="bar reference" style="--value:100%"><span>23,800</span></div>
-              </div>
-              <div class="bar-ratio">96.0%</div>
-            </div>
-
-            <div class="bar-row">
-              <div class="bar-label"><strong>Route param</strong><span>23,821 req/s</span></div>
-              <div class="bar-track">
-                <div class="bar openmesh" style="--value:97.9%"><span>23,821</span></div>
-                <div class="bar reference" style="--value:100%"><span>24,333</span></div>
-              </div>
-              <div class="bar-ratio">97.9%</div>
-            </div>
-
-            <div class="bar-row">
-              <div class="bar-label"><strong>JSON POST</strong><span>20,221 req/s</span></div>
-              <div class="bar-track">
-                <div class="bar openmesh" style="--value:96.5%"><span>20,221</span></div>
-                <div class="bar reference" style="--value:100%"><span>20,952</span></div>
-              </div>
-              <div class="bar-ratio">96.5%</div>
-            </div>
-
-            <div class="bar-row">
-              <div class="bar-label"><strong>1 middleware</strong><span>22,712 req/s</span></div>
-              <div class="bar-track">
-                <div class="bar openmesh" style="--value:100%"><span>22,712</span></div>
-                <div class="bar reference" style="--value:99.1%"><span>22,515</span></div>
-              </div>
-              <div class="bar-ratio">100.9%</div>
-            </div>
+          <div class="mesh-topologies" aria-label="Measured service invocation topologies">
+            <div><b>Direct</b><code>caller → target</code></div>
+            <div class="featured"><b>OpenMesh 0.5</b><code>caller → app.mesh() → target</code></div>
+            <div><b>Envoy 1.37.2</b><code>caller → outbound → inbound → target</code></div>
+            <div><b>Dapr 1.18.4</b><code>caller → daprd → daprd → target</code></div>
           </div>
 
-          <div class="benchmark-foot">
-            <strong>98.0%</strong>
+          <div class="mesh-bench-grid">
+            <article class="mesh-bench-result baseline">
+              <div class="result-name"><span>Baseline</span><strong>Direct</strong></div>
+              <div class="result-primary"><b>2,987</b><span>req/s</span></div>
+              <dl>
+                <div><dt>p99</dt><dd>30 ms</dd></div>
+                <div><dt>CPU sum</dt><dd>106.5%</dd></div>
+                <div><dt>RSS sum</dt><dd>133.5 MiB</dd></div>
+              </dl>
+            </article>
+
+            <article class="mesh-bench-result featured">
+              <div class="result-name"><span>TypeScript · 0 sidecars</span><strong>OpenMesh</strong></div>
+              <div class="result-primary"><b>1,807</b><span>req/s</span></div>
+              <dl>
+                <div><dt>p99</dt><dd>53 ms</dd></div>
+                <div><dt>CPU sum</dt><dd>104.8%</dd></div>
+                <div><dt>RSS sum</dt><dd>176.8 MiB</dd></div>
+              </dl>
+            </article>
+
+            <article class="mesh-bench-result">
+              <div class="result-name"><span>C++ · 2 proxies</span><strong>Envoy</strong></div>
+              <div class="result-primary"><b>1,281</b><span>req/s</span></div>
+              <dl>
+                <div><dt>p99</dt><dd>58 ms</dd></div>
+                <div><dt>CPU sum</dt><dd>183.8%</dd></div>
+                <div><dt>RSS sum</dt><dd>192.9 MiB</dd></div>
+              </dl>
+            </article>
+
+            <article class="mesh-bench-result">
+              <div class="result-name"><span>Go · 2 sidecars</span><strong>Dapr</strong></div>
+              <div class="result-primary"><b>1,243</b><span>req/s</span></div>
+              <dl>
+                <div><dt>p99</dt><dd>63 ms</dd></div>
+                <div><dt>CPU sum</dt><dd>197.5%</dd></div>
+                <div><dt>RSS sum</dt><dd>336.5 MiB</dd></div>
+              </dl>
+            </article>
+          </div>
+
+          <div class="mesh-bench-takeaway">
+            <div>
+              <strong>+41%</strong>
+              <span>throughput vs two-proxy Envoy</span>
+            </div>
+            <div>
+              <strong>+45%</strong>
+              <span>throughput vs two-sidecar Dapr</span>
+            </div>
             <p>
-              geometric-mean reference throughput across the preserved 0.4.0 native HTTP workloads.
-              This is regression evidence, not a universal production-performance claim.
+              Median of five 5-second rounds, 32 connections, pipelining 1, Node 24.21.0 on an Intel
+              i5-8279U Mac. Envoy uses one worker; Dapr uses GOMAXPROCS=1. Plain HTTP baseline —
+              TLS/mTLS is intentionally measured separately, not mixed into this result.
             </p>
           </div>
         </div>

@@ -132,6 +132,7 @@
     "bench": "node benchmarks/run.cjs",
     "bench:smoke": "node benchmarks/run.cjs --duration=1 --rounds=1 --connections=16 --scenarios=plaintext,json --frameworks=openmesh,fastify --output=results/smoke.json",
     "bench:guard": "node benchmarks/guard.cjs",
+    "bench:mesh": "node benchmarks/mesh/run.cjs",
     "build": "node scripts/build.cjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "prepare": "npm run build",
